@@ -83,6 +83,19 @@ def test_all_symbols_are_importable():
             "create_schedules_experimentdata",
             "l2co_optimizers._src.experimentdata",
         ),
+        # Read by l2co's bridge: random-search dispatch + plot categories
+        ("RandomSearchUpdateClass", "l2co_optimizers._src.random_search"),
+        ("random_search_mapping", "l2co_optimizers._src.random_search"),
+        ("normalized_evosax", "l2co_optimizers._src.evosax_implementations"),
+        ("evosax_mapping", "l2co_optimizers._src.evosax_implementations"),
+        ("optax_mapping", "l2co_optimizers._src.optax_implementations"),
+        ("lbfgs_mapping", "l2co_optimizers._src.lbfgs"),
+        ("shade_mapping", "l2co_optimizers._src.shade"),
+        ("turbo_mapping", "l2co_optimizers._src.turbo"),
+        (
+            "rbf_trust_region_mapping",
+            "l2co_optimizers._src.rbf_trust_region",
+        ),
     ],
 )
 def test_facade_symbol_is_its_src_origin(name, module):

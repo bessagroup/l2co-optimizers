@@ -12,6 +12,12 @@ The whole public surface is the flat `l2co_optimizers` namespace. It is organise
 
 ::: l2co_optimizers.create_schedules_experimentdata
 
+### Per-library registries
+
+`optimizers` is the merge of one name -> factory dict per library, each also exported on its own: `optax_mapping`, `evosax_mapping` (built from `normalized_evosax`, the normalized-name -> evosax class table), `lbfgs_mapping`, `shade_mapping`, `turbo_mapping`, `rbf_trust_region_mapping` and `random_search_mapping`. Consumers use them to group optimizers by library, e.g. l2co's plot categories.
+
+::: l2co_optimizers.RandomSearchUpdateClass
+
 ## Optimizer specification
 
 ::: l2co_optimizers.OptimizationStep

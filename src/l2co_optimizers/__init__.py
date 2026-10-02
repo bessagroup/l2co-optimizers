@@ -4,10 +4,12 @@ L2CO Optimizers - bare optimizers compatible with the L2CO library.
 The single public surface for using and *authoring* optimizers: the name
 registry and :class:`UpdateClass` container every factory returns, the
 :class:`OptimizationStep` spec the Hydra configs instantiate, the
-optimizer contract types, and the strategy-facing layer (``SubOpt``,
-handshake policy, state transfer, menu evaluation) that meta-optimizers
-dispatch through. Meta-optimization strategies themselves, and the loop
-that runs an optimizer on a task, live in ``l2co``.
+optimizer contract types, the per-library registries, and the
+strategy-facing layer (``SubOpt``, handshake policy, state transfer, menu
+evaluation) that meta-optimizers dispatch through. Meta-optimization
+strategies themselves, and the loop that runs an optimizer on a task,
+live in ``l2co``. The layout of this namespace is documented in
+``docs/api.md``.
 
 Tasks reach this package only through :class:`TaskLike`, a structural
 protocol that ``l2co_tasks.Task`` satisfies; neither package imports the
@@ -17,16 +19,15 @@ other.
 #                                                                       Modules
 # =============================================================================
 
-# Registry & construction
 from l2co_optimizers._src.evosax_implementations import (
     evosax_distribution_update,
+    evosax_mapping,
     evosax_population_update,
+    normalized_evosax,
 )
 from l2co_optimizers._src.experimentdata import (
     create_schedules_experimentdata,
 )
-
-# Handshake policy
 from l2co_optimizers._src.handshake_policy import (
     DEFAULT_HANDSHAKE_POLICY,
     HANDSHAKE_POLICY,
@@ -40,12 +41,11 @@ from l2co_optimizers._src.handshake_policy import (
     population_handshake_for,
 )
 from l2co_optimizers._src.lbfgs import (
+    lbfgs_mapping,
     lbfgs_per_eval_key,
     lbfgs_update,
     scale_by_zoom_linesearch_per_eval_key,
 )
-
-# Loss evaluation
 from l2co_optimizers._src.loss import (
     vmapped_loss,
     vmapped_loss_and_grad,
@@ -65,23 +65,18 @@ from l2co_optimizers._src.opt_history import (
     OptHistory,
     RecentHistory,
 )
-
-# Base optimizer factories
 from l2co_optimizers._src.optax_implementations import (
     normalized_optax_from_state,
     normalized_optax_normal,
+    optax_mapping,
     optax_update,
     optax_update_extra_kwargs,
 )
-
-# Optimizer specification
 from l2co_optimizers._src.optimizer_schedule import (
     ALIAS_HYPERPARAMETER,
     OptimizationStep,
     register_schedule_namer,
 )
-
-# Population sizes
 from l2co_optimizers._src.popsize import (
     count_parameters,
     shade_popsize,
@@ -89,10 +84,11 @@ from l2co_optimizers._src.popsize import (
     variable_popsize_even,
 )
 from l2co_optimizers._src.random_search import (
+    RandomSearchUpdateClass,
+    random_search_mapping,
     random_search_update,
 )
-
-# Samplers
+from l2co_optimizers._src.rbf_trust_region import rbf_trust_region_mapping
 from l2co_optimizers._src.sampler import (
     constant_sampling,
     get_sampler,
@@ -101,14 +97,11 @@ from l2co_optimizers._src.sampler import (
     random_sampling,
     xavier_sampling,
 )
-
-# Built-in algorithms
 from l2co_optimizers._src.shade import (
     SHADE,
+    shade_mapping,
     shade_update,
 )
-
-# State transfer
 from l2co_optimizers._src.state_transfer import (
     CONF_ABSENT,
     CONF_ESTIMATED,
@@ -127,8 +120,6 @@ from l2co_optimizers._src.state_transfer import (
 from l2co_optimizers._src.stopping_criteria import (
     STOPPING_CRITERIA,
 )
-
-# Sub-optimizer adapter
 from l2co_optimizers._src.sub_optimizer import (
     CONSTRUCTOR_HYPERPARAMETERS,
     LINESEARCH_FEVAL_BOUND,
@@ -140,8 +131,7 @@ from l2co_optimizers._src.sub_optimizer import (
     pop_sub_optimizer,
     resolve_popsize,
 )
-
-# Contract types
+from l2co_optimizers._src.turbo import turbo_mapping
 from l2co_optimizers._src.typing import (
     AskFunction,
     InitFunction,
@@ -195,6 +185,7 @@ __all__ = [
     "POPULATION_HANDSHAKES",
     "POPULATION_VARIANTS",
     "PopSize",
+    "RandomSearchUpdateClass",
     "RecentHistory",
     "SHADE",
     "STOPPING_CRITERIA",
@@ -214,6 +205,7 @@ __all__ = [
     "count_parameters",
     "create_schedules_experimentdata",
     "evosax_distribution_update",
+    "evosax_mapping",
     "evosax_population_update",
     "get_sampler",
     "grad_sub_optimizer",
@@ -221,12 +213,15 @@ __all__ = [
     "handshake_policy_for",
     "l2co_native_evosax",
     "l2co_native_optax",
+    "lbfgs_mapping",
     "lbfgs_per_eval_key",
     "lbfgs_update",
     "menu_loss_and_grad",
     "normal_sampling",
+    "normalized_evosax",
     "normalized_optax_from_state",
     "normalized_optax_normal",
+    "optax_mapping",
     "optax_update",
     "optax_update_extra_kwargs",
     "optimizer_mapping",
@@ -237,14 +232,18 @@ __all__ = [
     "population_best_one",
     "population_handshake_for",
     "random_sampling",
+    "random_search_mapping",
     "random_search_update",
+    "rbf_trust_region_mapping",
     "register_optimizer",
     "register_schedule_namer",
     "resolve_popsize",
     "scale_by_zoom_linesearch_per_eval_key",
+    "shade_mapping",
     "shade_popsize",
     "shade_update",
     "transfer_spec_for",
+    "turbo_mapping",
     "variable_popsize",
     "variable_popsize_even",
     "vmapped_loss",
