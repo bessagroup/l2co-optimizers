@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "L2CO Optimizers: bare optimizers compatible with the L2CO library"
+abstract: >-
+  The optimizer registry, the UpdateClass container and the built-in optax
+  and evosax-based optimizers (plus SHADE, TuRBO, an RBF trust region and
+  per-evaluation-key L-BFGS) used by the L2CO meta-optimization stack, with
+  the strategy-facing handshake and state-transfer layer and ready-made Hydra
+  optimizer configs. Built on JAX/Equinox.
+authors:
+  - family-names: "van der Schelling"
+    given-names: "Martin P."
+    email: "m.p.vanderschelling@tudelft.nl"
+license: BSD-3-Clause
+repository-code: "https://github.com/bessagroup/l2co-optimizers"
+version: "0.1.0"
+type: software
+keywords:
+  - optimization
+  - optimizers
+  - jax
+  - equinox
+  - evolution-strategies

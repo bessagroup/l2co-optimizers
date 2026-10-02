@@ -1,0 +1,14 @@
+# Two-optimizer contrast set, pairing with the `bbob_two_functions` task
+# set in l2co-tasks (sphere + rastrigin). sepcmaes (population/evolutionary)
+# wins on the multimodal rastrigin; adam at learning_rate=1e-2 (gradient
+# descent) wins on the smooth sphere -- so neither optimizer dominates both
+# functions. Tuned in notebooks/two_functions.ipynb.
+# randomsearch is appended automatically by the static-optimizer sub-pipeline
+# (l2co_experiments.build_static_optimizer_subpipeline) as the ERT-calibration
+# baseline; do not add it here.
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: sepcmaes
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: adam
+  hyperparameters:
+    learning_rate: 1e-2

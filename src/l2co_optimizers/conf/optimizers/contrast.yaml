@@ -1,0 +1,32 @@
+# Curated contrast portfolio for the task-specification validation harness
+# (experiments/validate_task_specifications). One strong representative per
+# class the two tag-axis contrasts exercise:
+#
+#   Separability contrast : cmaes  vs  sepcmaes   (rotation-invariant vs separable)
+#   Modality contrast     : best descent {lbfgs, adam} vs best population {cmaes, differentialevolution, pso}
+#
+# lbfgs anchors the descent side (tuning-free quasi-Newton) so a mis-set
+# learning rate can't manufacture false modality flags; adam is run at two
+# learning rates as a cheap hedge. cmaes and sepcmaes carry no `popsize`
+# override, so both default to variable_popsize = int(4 + 3*log d) at every
+# dimension — the separability contrast is therefore at matched popsize.
+# randomsearch is appended automatically by build_static_optimizer_subpipeline;
+# do not add it here.
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: cmaes
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: sepcmaes
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: lbfgs
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: adam
+  hyperparameters:
+    learning_rate: 1e-2
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: adam
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: differentialevolution
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: pso

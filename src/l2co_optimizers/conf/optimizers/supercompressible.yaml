@@ -1,0 +1,7 @@
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: cmaes
+  stopping_criteria:
+    type: covariance_matrix
+    tol: 1e-12
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: pso

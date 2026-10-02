@@ -1,0 +1,3 @@
+include LICENSE
+include README.md
+recursive-include src/l2co_optimizers/conf *.yaml

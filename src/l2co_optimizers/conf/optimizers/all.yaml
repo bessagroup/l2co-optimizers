@@ -1,0 +1,183 @@
+# Full optimizer suite: all supported evosax, optax, and second-order methods
+
+# ==========================================
+# Evosax: Distribution-based Algorithms
+# ==========================================
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: ars
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: asebo
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: cmaes
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: crfmnes
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: des
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: esmc
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: gradientlessdescent
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: guidedes
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: hillclimbing
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: iamalgamfull
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: iamalgamunivariate
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: lmmaes
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: maes
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: noisereusees
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: openes
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: persistentes
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: pgpe
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: rmes
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: sepcmaes
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: simulatedannealing
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: simplees
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: snes
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: xnes
+
+# ==========================================
+# Evosax: Population-based / Genetic Algorithms
+# ==========================================
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: differentialevolution
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: diffusionevolution
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: gesmrga
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: mr15ga
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: pso
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: samrga
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: simplega
+
+# ==========================================
+# Optax: Gradient-based Optimizers
+# ==========================================
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: adabelief
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: adadelta
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: adan
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: adafactor
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: adagrad
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: adam
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: adamw
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: adamax
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: adamaxw
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: amsgrad
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: fromage
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: lamb
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: lars
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: lion
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: nadam
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: nadamw
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: noisysgd
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: novograd
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: optimisticgradientdescent
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: optimisticadam
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: radam
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: rmsprop
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: rprop
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: sgd
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: signsgd
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: sm3
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: yogi
+  hyperparameters:
+    learning_rate: 1e-3
+
+# ==========================================
+# Second-order
+# ==========================================
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: lbfgs

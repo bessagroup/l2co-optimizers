@@ -1,0 +1,26 @@
+# Headroom-balanced quartet: the 4 schedules selected *jointly* with the
+# bbob_headroom_{train,test} task sets (tasks=bbob_headroom_train / _test).
+#
+# Chosen to be individually similar in overall ERTD while the virtual best
+# solver over them sits far above that common level, and to be genuinely strong
+# optimizers rather than four mediocre ones that happen to tie: pool ranks
+# 1, 2, 3 and 8 of the 52-schedule `all` field. Two gradient-based
+# (lbfgs, rprop), two derivative-free (crfmnes, mr15ga).
+#
+# Achieved on bbob_headroom_train / _test (100 tasks each):
+#   level 0.3146 / 0.3195, spread 0.0199 / 0.0200, VBS 0.6037 / 0.6091,
+#   gap 0.2891 / 0.2896, VBS-SBS +0.2792 / +0.2794.
+# Selection method and provenance: l2co_experiments/docs/plans/headroom-dataset.md
+#
+# randomsearch is appended automatically by the static-optimizer sub-pipeline
+# (l2co_experiments.build_static_optimizer_subpipeline); do not add it here.
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: lbfgs
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: rprop
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: crfmnes
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: mr15ga

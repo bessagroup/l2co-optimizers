@@ -1,0 +1,13 @@
+# Medium optimizer set: evolutionary (SepCMAES), gradient (Adam), quasi-Newton (L-BFGS), swarm (PSO)
+# randomsearch is appended automatically by the static-optimizer sub-pipeline
+# (l2co_experiments.build_static_optimizer_subpipeline); do not add it here.
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: sepcmaes
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: adam
+  hyperparameters:
+    learning_rate: 1e-2
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: lbfgs
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: pso

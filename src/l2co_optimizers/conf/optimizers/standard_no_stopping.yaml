@@ -1,0 +1,14 @@
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: cmaes
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: adam
+  hyperparameters:
+    learning_rate: 1e-3
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: adam
+  hyperparameters:
+    learning_rate: 1e-1
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: pso
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: lbfgs
