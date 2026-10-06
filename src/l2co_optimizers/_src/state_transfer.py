@@ -74,21 +74,32 @@ optimizer (``scale_by_learning_rate`` carries an ``EmptyState``), and the
 ravel function an evosax algorithm uses to flatten a solution pytree.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Standard
 from __future__ import annotations
 
 from collections.abc import Callable
 
+# Third-party
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
 from jaxtyping import Array, Bool, Float, PyTree
 
+# Local
 from l2co_optimizers._src.typing import (
     TransferReadFunction,
     TransferWriteFunction,
 )
 
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
 # =============================================================================
 
 __all__ = [

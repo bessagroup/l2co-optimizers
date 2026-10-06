@@ -9,8 +9,13 @@ default population size is never odd (``variable_popsize`` is odd whenever
 ``int(4 + 3 * log(d))`` is odd, e.g. ``d == 3`` gives ``7``).
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Third-party
 import pytest
 
+# Local
 from l2co_optimizers._src.evosax_implementations import (
     _EVEN_POPSIZE_REQUIRED,
     evosax_mapping,
@@ -19,6 +24,13 @@ from l2co_optimizers._src.popsize import (
     variable_popsize,
     variable_popsize_even,
 )
+
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
+# =============================================================================
 
 # d == 3 is the smallest dimensionality whose ``variable_popsize`` is odd.
 _ODD_DIMS = [3, 7, 11]

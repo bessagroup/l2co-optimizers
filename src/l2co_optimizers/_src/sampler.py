@@ -5,9 +5,10 @@ Module for samplers.
 #                                                                       Modules
 # =============================================================================
 
-# Third party
+# Standard
 from collections.abc import Callable
 
+# Third-party
 import jax
 import jax.numpy as jnp
 from jax.nn import initializers

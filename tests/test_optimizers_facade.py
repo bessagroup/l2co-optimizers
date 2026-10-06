@@ -6,14 +6,27 @@ is reachable from the package root and is the *same object* as its
 importing it loads neither ``l2co`` nor ``l2co_tasks``.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Standard
 import importlib
 import inspect
 import subprocess
 import sys
 
+# Third-party
 import pytest
 
+# Local
 import l2co_optimizers as facade
+
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
+# =============================================================================
 
 
 def test_all_symbols_are_importable():

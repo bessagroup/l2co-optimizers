@@ -1,7 +1,12 @@
 """Mapping from optimizer names to their UpdateClass implementations."""
 
+#                                                                       Modules
+# =============================================================================
+
+# Standard
 from collections.abc import Callable
 
+# Local
 from l2co_optimizers._src.evosax_implementations import evosax_mapping
 from l2co_optimizers._src.lbfgs import lbfgs_mapping
 from l2co_optimizers._src.optax_implementations import optax_mapping
@@ -11,6 +16,13 @@ from l2co_optimizers._src.shade import shade_mapping
 from l2co_optimizers._src.turbo import turbo_mapping
 from l2co_optimizers._src.update_class import UpdateClass
 from l2co_optimizers._src.utils import normalize_key
+
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
+# =============================================================================
 
 # Registry of optimizer-name -> factory callables. Each value is a callable
 # that, when called with the keyword contract used by ``RunState.init``

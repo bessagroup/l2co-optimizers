@@ -7,12 +7,17 @@ turning-ring geometry, NaN robustness, and the factory's
 constructor-vs-Params hyperparameter split.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Third-party
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
 import pytest
 
+# Local
 from l2co_optimizers._src.popsize import shade_popsize, variable_popsize
 from l2co_optimizers._src.shade import (
     SHADE,
@@ -24,6 +29,11 @@ from l2co_optimizers._src.shade import (
 
 from .toy_problems import sphere_problem
 
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
 # =============================================================================
 
 

@@ -11,21 +11,20 @@ from a task to those lives in ``l2co``.
 #                                                                       Modules
 # =============================================================================
 
+# Standard
 from __future__ import annotations
 
 from abc import abstractmethod
-
-# Standard
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-import equinox as eqx
-
 # Third-party
+import equinox as eqx
 from evosax.algorithms.base import State as EvoSaxState
 from jaxtyping import Array, Bool, Float, Int, PRNGKeyArray, PyTree
 from optax import OptState as OptaxOptState
 
+# Local
 if TYPE_CHECKING:
     from l2co_optimizers._src.batching import BatchState
     from l2co_optimizers._src.opt_history import RecentHistory

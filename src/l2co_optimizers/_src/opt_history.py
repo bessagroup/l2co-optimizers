@@ -5,11 +5,11 @@ Module for the opt history.
 #                                                                       Modules
 # =============================================================================
 
+# Standard
 from __future__ import annotations
 
-import equinox as eqx
-
 # Third-party
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, Int, PyTree

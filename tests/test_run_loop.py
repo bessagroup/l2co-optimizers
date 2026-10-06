@@ -18,11 +18,16 @@ The meta-optimizer side of the marker (``L2COUpdateClass`` /
 ``RL2COUpdateClass``) is asserted in l2co's and rl2co's suites.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Standard
 from __future__ import annotations
 
 import dataclasses
 import inspect
 
+# Third-party
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -30,6 +35,7 @@ import jax.random as jr
 import numpy as np
 import pytest
 
+# Local
 import l2co_optimizers._src.random_search as rs_mod
 from l2co_optimizers import (
     BatchState,
@@ -40,6 +46,13 @@ from l2co_optimizers import (
 )
 
 from .toy_problems import sphere_problem
+
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
+# =============================================================================
 
 N_ITERATIONS = 6
 N_REALIZATIONS = 3

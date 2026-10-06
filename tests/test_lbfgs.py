@@ -9,6 +9,10 @@ feval accounting (one evaluation per linesearch trial —
 ``docs/adr/0010``).
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Third-party
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -16,6 +20,7 @@ import jax.random as jr
 import numpy as np
 import optax
 
+# Local
 from l2co_optimizers._src.lbfgs import (
     DEFAULT_MAX_LINESEARCH_STEPS,
     lbfgs_update,
@@ -29,6 +34,11 @@ from l2co_optimizers._src.update_class import UpdateClass
 
 from .toy_problems import quadratic_problem
 
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
 # =============================================================================
 
 

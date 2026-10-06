@@ -1,6 +1,7 @@
 """
 Module for stopping criteria
 """
+
 #                                                                       Modules
 # =============================================================================
 
@@ -10,13 +11,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+# Third-party
 import jax
 import jax.numpy as jnp
 import optax
-
-# Third-party
 from jaxtyping import Array, Bool, PyTree
 
+# Local
 if TYPE_CHECKING:
     from l2co_optimizers._src.opt_history import RecentHistory
 

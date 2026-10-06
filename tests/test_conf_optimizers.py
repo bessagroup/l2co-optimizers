@@ -14,22 +14,35 @@ databank keys, and a config move that silently renamed a schedule would
 orphan every stored trajectory under it.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Standard
 from __future__ import annotations
 
 import json
 from importlib import resources
 from pathlib import Path
 
+# Third-party
 import pytest
 from hydra import compose, initialize_config_module
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
 
+# Local
 from l2co_optimizers import (
     OptimizationStep,
     create_schedules_experimentdata,
     optimizer_mapping,
 )
+
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
+# =============================================================================
 
 _CONF = resources.files("l2co_optimizers.conf") / "optimizers"
 _CONFIGS = sorted(

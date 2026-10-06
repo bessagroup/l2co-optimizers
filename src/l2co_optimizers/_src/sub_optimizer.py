@@ -24,11 +24,16 @@ only l2co internals and both packages' wrappers need it — see
 ``l2co ADR 0003-promote-subopt-adapter-from-rl2co.md``.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Standard
 from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
 
+# Third-party
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -39,6 +44,7 @@ from evosax.algorithms.distribution_based.base import (
 from evosax.algorithms.population_based.base import PopulationBasedAlgorithm
 from jaxtyping import Array, Float, PRNGKeyArray, PyTree
 
+# Local
 from l2co_optimizers._src.evosax_implementations import normalized_evosax
 from l2co_optimizers._src.handshake_policy import (
     POPULATION_HANDSHAKES,
@@ -68,6 +74,11 @@ from l2co_optimizers._src.turbo import TuRBO
 from l2co_optimizers._src.typing import LossFunction
 from l2co_optimizers._src.utils import normalize_key
 
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
 # =============================================================================
 
 __all__ = [

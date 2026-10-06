@@ -15,8 +15,13 @@ Resolving an ``OptimizationStep`` against a real ``Task`` is l2co's
 ``init_run_state`` and is tested there.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Standard
 from __future__ import annotations
 
+# Third-party
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -24,6 +29,7 @@ import jax.random as jr
 import numpy as np
 import pytest
 
+# Local
 from l2co_optimizers import (
     BatchState,
     HistoryState,
@@ -38,6 +44,13 @@ from l2co_optimizers import (
 )
 
 from .toy_problems import noisy_sphere_problem, sphere_problem
+
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
+# =============================================================================
 
 DIM = 4
 N_ITERATIONS = 5

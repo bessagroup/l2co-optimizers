@@ -25,6 +25,7 @@ and ``batch_size``; turning an ``l2co_tasks.Task`` into those is
 #                                                                       Modules
 # =============================================================================
 
+# Local
 from l2co_optimizers._src.batching import BatchState
 from l2co_optimizers._src.evosax_implementations import (
     evosax_distribution_update,
