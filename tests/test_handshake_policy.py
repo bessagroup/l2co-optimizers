@@ -22,7 +22,7 @@ from l2co_optimizers import (
     handshake_policy_for,
     optstep_to_subopt,
 )
-from l2co_optimizers._src.handshake_policy import (
+from l2co_optimizers._src.core.handshake_policy import (
     OPT_STATE_VARIANTS,
     POPULATION_VARIANTS,
 )

@@ -26,14 +26,14 @@ import jax.random as jr
 from jaxtyping import Array, Float, PRNGKeyArray, PyTree
 
 # Local
-from l2co_optimizers._src.batching import BatchState
-from l2co_optimizers._src.history_state import HistoryState
-from l2co_optimizers._src.model_evaluation import evaluate
-from l2co_optimizers._src.typing import (
+from l2co_optimizers._src.core.batching import BatchState
+from l2co_optimizers._src.core.history_state import HistoryState
+from l2co_optimizers._src.core.model_evaluation import evaluate
+from l2co_optimizers._src.core.typing import (
     InputParameters,
     SamplerFunction,
 )
-from l2co_optimizers._src.update_class import UpdateClass
+from l2co_optimizers._src.core.update_class import UpdateClass
 
 #                                                          Authorship & Credits
 # =============================================================================

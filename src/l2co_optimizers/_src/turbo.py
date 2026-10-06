@@ -78,24 +78,24 @@ from jax.tree_util import Partial
 from jaxtyping import PyTree
 
 # Local
-from l2co_optimizers._src.evosax_implementations import (
-    evosax_population_based_fn,
-)
-from l2co_optimizers._src.popsize import resolve_popsize
-from l2co_optimizers._src.rbf_trust_region import (
-    _mean_sq_dist,
-    default_n_candidates,
-)
-from l2co_optimizers._src.state_transfer import (
+from l2co_optimizers._src.core.popsize import resolve_popsize
+from l2co_optimizers._src.core.state_transfer import (
     FAMILY_POPULATION,
     build_transfer_fns,
 )
-from l2co_optimizers._src.typing import (
+from l2co_optimizers._src.core.typing import (
     LossFunction,
     PopSize,
     StopFunction,
 )
-from l2co_optimizers._src.update_class import UpdateClass
+from l2co_optimizers._src.core.update_class import UpdateClass
+from l2co_optimizers._src.evosax_implementations import (
+    evosax_population_based_fn,
+)
+from l2co_optimizers._src.rbf_trust_region import (
+    _mean_sq_dist,
+    default_n_candidates,
+)
 
 #                                                          Authorship & Credits
 # =============================================================================

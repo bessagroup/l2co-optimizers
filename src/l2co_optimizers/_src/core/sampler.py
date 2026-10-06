@@ -15,7 +15,7 @@ from jax.nn import initializers
 from jaxtyping import PRNGKeyArray, PyTree
 
 # Local
-from l2co_optimizers._src.typing import InputParameters
+from l2co_optimizers._src.core.typing import InputParameters
 
 #                                                          Authorship & Credits
 # =============================================================================

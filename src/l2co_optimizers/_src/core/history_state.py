@@ -20,7 +20,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 
 # Local
-from l2co_optimizers._src.typing import OptHistoryType
+from l2co_optimizers._src.core.typing import OptHistoryType
 
 #                                                          Authorship & Credits
 # =============================================================================

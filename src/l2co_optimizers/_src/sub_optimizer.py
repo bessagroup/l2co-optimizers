@@ -15,7 +15,7 @@ slot.
 Two factory functions build ``SubOpt`` instances directly
 (:func:`grad_sub_optimizer`, :func:`pop_sub_optimizer`); a third,
 :func:`optstep_to_subopt`, dispatches an
-:class:`~l2co_optimizers._src.optimizer_schedule.OptimizationStep` to the
+:class:`~l2co_optimizers._src.core.optimizer_schedule.OptimizationStep` to the
 appropriate factory by looking the optimizer name up in the canonical
 l2co registries.
 
@@ -45,11 +45,21 @@ from evosax.algorithms.population_based.base import PopulationBasedAlgorithm
 from jaxtyping import Array, Float, PRNGKeyArray, PyTree
 
 # Local
-from l2co_optimizers._src.evosax_implementations import normalized_evosax
-from l2co_optimizers._src.handshake_policy import (
+from l2co_optimizers._src.core.handshake_policy import (
     POPULATION_HANDSHAKES,
     handshake_policy_for,
 )
+from l2co_optimizers._src.core.optimizer_schedule import OptimizationStep
+from l2co_optimizers._src.core.state_transfer import (
+    FAMILY_DISTRIBUTION,
+    FAMILY_GRADIENT,
+    FAMILY_POPULATION,
+    build_transfer_fns,
+    transfer_spec_for,
+)
+from l2co_optimizers._src.core.typing import LossFunction
+from l2co_optimizers._src.core.utils import normalize_key
+from l2co_optimizers._src.evosax_implementations import normalized_evosax
 from l2co_optimizers._src.lbfgs import (
     DEFAULT_MAX_LINESEARCH_STEPS,
     stock_lbfgs,
@@ -60,19 +70,9 @@ from l2co_optimizers._src.optax_implementations import (
     normalized_optax_normal,
     step_fevals,
 )
-from l2co_optimizers._src.optimizer_schedule import OptimizationStep
 from l2co_optimizers._src.rbf_trust_region import RBFTrustRegion
 from l2co_optimizers._src.shade import SHADE
-from l2co_optimizers._src.state_transfer import (
-    FAMILY_DISTRIBUTION,
-    FAMILY_GRADIENT,
-    FAMILY_POPULATION,
-    build_transfer_fns,
-    transfer_spec_for,
-)
 from l2co_optimizers._src.turbo import TuRBO
-from l2co_optimizers._src.typing import LossFunction
-from l2co_optimizers._src.utils import normalize_key
 
 #                                                          Authorship & Credits
 # =============================================================================
@@ -158,8 +158,8 @@ class SubOpt(eqx.Module):
 
     Build via :func:`grad_sub_optimizer` or :func:`pop_sub_optimizer`,
     or have the wrapper factories build them automatically from
-    :class:`~l2co_optimizers._src.optimizer_schedule.OptimizationStep` entries
-    via :func:`optstep_to_subopt`.
+    :class:`~l2co_optimizers._src.core.optimizer_schedule.OptimizationStep`
+    entries via :func:`optstep_to_subopt`.
 
     Attributes
     ----------
@@ -192,7 +192,7 @@ class SubOpt(eqx.Module):
         ``"continue"`` (default) or ``"reset"`` — whether this
         sub-optimizer's internal state survives a handshake, or must be
         re-initialised around the best parameters because it cannot.
-        Resolved from :data:`~l2co_optimizers._src.handshake_policy.
+        Resolved from :data:`~l2co_optimizers._src.core.handshake_policy.
         HANDSHAKE_POLICY` by :func:`optstep_to_subopt`; read at Python
         trace time by the strategy wrappers, so a ``'continue'``
         sub-optimizer's reset branch is never traced. See
@@ -206,7 +206,7 @@ class SubOpt(eqx.Module):
         mirrored-sampling algorithm computes.
     family : str
         Which optimizer family this is, one of
-        :data:`~l2co_optimizers._src.state_transfer.FAMILIES`. Says what
+        :data:`~l2co_optimizers._src.core.state_transfer.FAMILIES`. Says what
         kind of search state this sub-optimizer holds, and nothing more
         -- the population half of a switch is decided by
         :attr:`own_ask`.
@@ -221,14 +221,14 @@ class SubOpt(eqx.Module):
         their draws in state (``l2co ADR 0012``), and the mutation GAs
         score the next generation against a baseline the writer just
         repaired (``l2co ADR 0014``). Resolved from the same
-        :func:`~l2co_optimizers._src.state_transfer.transfer_spec_for`
+        :func:`~l2co_optimizers._src.core.state_transfer.transfer_spec_for`
         table the ``UpdateClass`` path reads, so the environment and
         both deployment wrappers agree.
     transfer_read_fn : Callable | None
         ``transfer_read_fn(sub_state) -> (sigma, conf)`` -- projects this
         sub-optimizer's own state onto the scale a switch carries.
         Resolved from the same
-        :func:`~l2co_optimizers._src.state_transfer.build_transfer_fns`
+        :func:`~l2co_optimizers._src.core.state_transfer.build_transfer_fns`
         the ``UpdateClass`` path uses, so the environment and both
         deployment wrappers agree (``l2co ADR 0009``'s constraint,
         applied to ``l2co ADR 0013``'s channel).
@@ -295,7 +295,7 @@ class SubOpt(eqx.Module):
         """Build the population this sub-optimizer receives on a switch.
 
         Dispatches on :attr:`population_handshake` into
-        :data:`~l2co_optimizers._src.handshake_policy.
+        :data:`~l2co_optimizers._src.core.handshake_policy.
         POPULATION_HANDSHAKES`, the single canonical implementation the
         rl2co environment also uses -- so a deployed policy sees the same
         post-switch population it was trained against. The returned
@@ -551,7 +551,7 @@ def resolve_popsize(
 ) -> int:
     """Resolve the canonical popsize for ``opt_step`` via l2co's rules.
 
-    Builds an :class:`~l2co_optimizers._src.update_class.UpdateClass`
+    Builds an :class:`~l2co_optimizers._src.core.update_class.UpdateClass`
     purely to read its ``popsize`` attribute — ``1`` for optax-style
     optimizers, an explicit value or ``int(4 + 3 * log(d))`` for
     evosax — so the wrapper's population sizing matches the call site

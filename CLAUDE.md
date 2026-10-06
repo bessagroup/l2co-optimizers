@@ -27,7 +27,7 @@ l2co-tasks        l2co-optimizers        (neither imports the other)
 - **There is no task here** (l2co ADR 0018). Factories take `model`, `loss_fn` and `pass_rng` as required keywords; `RunState.init` takes a built `UpdateClass` plus `model`, `dataset`, `batch_size`. Popsize callables take the dimensionality (`count_parameters(model)`). `tests/test_optimizers_facade.py` rejects any public callable with a `task` parameter.
 - **The run loop lives here, as `UpdateClass` methods** (l2co ADR 0017): `init_state`, `step` / `batch_step`, `run`, `batch_run` (routes on `sequential_realizations`), `batch_run_fused`, `batch_run_sequential`. So do the states it threads: `BatchState`, the `HistoryState` buffer and `Carry`. The loop takes a plain `dict[str, Array]` dataset, never a task.
   - `RandomSearchUpdateClass` overrides `run` (chunked) and `batch_run` (always sequential, for peak memory).
-  - **`RunState`** (`_src/run_state.py`) is here too, with `reset` / `batch_reset` / `run` / `batch_evaluate` and `evaluate` public (`batch_run` stays private in `_src`) (`_src/model_evaluation.py`): `RunState.init` takes an already-built `UpdateClass` (l2co's `init_run_state` resolves the `OptimizationStep` against a task), and the rest rewraps the `UpdateClass` loop. l2co re-exports them.
+  - **`RunState`** (`_src/core/run_state.py`) is here too, with `reset` / `batch_reset` / `run` / `batch_evaluate` and `evaluate` public (`batch_run` stays private in `_src`) (`_src/core/model_evaluation.py`): `RunState.init` takes an already-built `UpdateClass` (l2co's `init_run_state` resolves the `OptimizationStep` against a task), and the rest rewraps the `UpdateClass` loop. l2co re-exports them.
   - **What stays in l2co:** `RolloutWrapper`, `HistoryState`'s exports (`l2co.history_to_xarray` / `history_to_xarray_realizations` / `history_to_dataloader`, which need xarray and the ERT), and every meta-optimizer (`strategy_wrapper`, `meta_optimizer`, models).
 
 ## Commands
@@ -43,13 +43,14 @@ The git hook calls `pre-commit`, which is not on PATH in the devcontainer. Run `
 
 ## Architecture
 
+- **`_src` layout:** `_src/core/` holds everything optimizer-agnostic — contract types (`typing`), `UpdateClass` and its run loop, `opt_history`, `history_state`, `batching`, `run_state`, `model_evaluation`, `loss`, `popsize`, `sampler`, `stopping_criteria`, `optimizer_schedule`, `experimentdata`, `utils`, `state_transfer`, `handshake_policy`. `_src/` itself holds the optimizer implementations (`optax_implementations`, `evosax_implementations`, `lbfgs`, `shade`, `turbo`, `rbf_trust_region`, `random_search`) and the modules that must see all of them (`mapping` — the registry, `sub_optimizer`, `menu_eval`). **`core` never imports from outside `core`**; `tests/test_core_layering.py` enforces it, including `TYPE_CHECKING` and function-local imports. A new module goes in `core/` only if it names no specific optimizer.
 - **Public surface:** `src/l2co_optimizers/__init__.py`, one flat namespace mirroring `l2co_tasks`. The implementation lives in `_src/`. A name is public only if a sibling package (l2co, rl2co, l2co_experiments, l2co-tasks, crax-l2co — code, tests, notebooks or Hydra `_target_`s) uses it, or it is part of the bare-optimizer authoring surface (registry, `UpdateClass` and its contract types, loss helpers, state transfer). The per-library factories (`optax_update`, `evosax_*_update`, `lbfgs_update`, …), `SHADE`, the `l2co_native_*` tables and the handshake/transfer tables are private: the built-ins are reached by registry name, and this package's own tests import them from `_src`. Add a new public symbol to `__init__.py` and to `tests/test_optimizers_facade.py`'s origin table.
 - **Registry** (`_src/mapping.py`): keys are stored under `normalize_key`, which strips non-alphanumerics and lowercases. Every factory follows one keyword convention: `model=`, `loss_fn=`, `pass_rng=`, `opt_hash=`, `bounded=`, `stop_fn=`, plus `**hyperparameters`. Meta-optimizers register in l2co, not here.
 - **Factories:** they live next to their library.
   - `optax_update` / `optax_update_extra_kwargs` and the `optax_fn` closures are in `_src/optax_implementations.py`.
   - The evosax equivalents are in `_src/evosax_implementations.py`.
   - The built-ins each have their own module.
-  - `UpdateClass` (`_src/update_class.py`) is the container plus the run loop; factories never subclass it to change how a run executes, except `RandomSearchUpdateClass`.
+  - `UpdateClass` (`_src/core/update_class.py`) is the container plus the run loop; factories never subclass it to change how a run executes, except `RandomSearchUpdateClass`.
 - **`bounded=None` and `stop_fn=None`** mean unbounded and never-stop. Keep that true for any new closure factory.
 - **`OptimizationStep.name`** is a databank key.
   - Resolution order: `alias`, then a namer registered with `register_schedule_namer` (meta-optimizer packages register theirs), then the generic join.
@@ -63,7 +64,7 @@ The git hook calls `pre-commit`, which is not on PATH in the devcontainer. Run `
 - Ruff, line length 79, numpy docstrings. Update docstrings and `Attributes` lists in the same change as any behaviour change.
 - Decisions taken before the split are l2co ADRs. Cite them as "l2co ADR 00NN" (`docs/agents/domain.md` lists them). New decisions specific to this package go in `docs/adr/`, numbered from 0001.
 - Glossary: `CONTEXT.md`. Say *bare optimizer* vs *meta-optimizer*, and *menu*, not portfolio.
-- Open TODOs: drop `flax` (used only for `flax.struct` in `shade` / `turbo` / `rbf_trust_region`); decide `normalize_key`'s home (`_src/utils.py`).
+- Open TODOs: drop `flax` (used only for `flax.struct` in `shade` / `turbo` / `rbf_trust_region`); decide `normalize_key`'s home (`_src/core/utils.py`).
 
 ## Related repositories
 

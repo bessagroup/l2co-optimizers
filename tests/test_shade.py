@@ -18,7 +18,7 @@ import jax.random as jr
 import pytest
 
 # Local
-from l2co_optimizers._src.popsize import shade_popsize, variable_popsize
+from l2co_optimizers._src.core.popsize import shade_popsize, variable_popsize
 from l2co_optimizers._src.shade import (
     SHADE,
     _donor_indices,

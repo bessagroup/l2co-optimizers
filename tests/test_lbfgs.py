@@ -21,6 +21,7 @@ import numpy as np
 import optax
 
 # Local
+from l2co_optimizers._src.core.update_class import UpdateClass
 from l2co_optimizers._src.lbfgs import (
     DEFAULT_MAX_LINESEARCH_STEPS,
     lbfgs_update,
@@ -30,7 +31,6 @@ from l2co_optimizers._src.optax_implementations import (
     optax_update_extra_kwargs,
     step_fevals,
 )
-from l2co_optimizers._src.update_class import UpdateClass
 
 from .toy_problems import quadratic_problem
 

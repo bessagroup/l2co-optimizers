@@ -26,9 +26,9 @@ from optax import OptState as OptaxOptState
 
 # Local
 if TYPE_CHECKING:
-    from l2co_optimizers._src.batching import BatchState
-    from l2co_optimizers._src.opt_history import RecentHistory
-    from l2co_optimizers._src.state_transfer import TransferBundle
+    from l2co_optimizers._src.core.batching import BatchState
+    from l2co_optimizers._src.core.opt_history import RecentHistory
+    from l2co_optimizers._src.core.state_transfer import TransferBundle
 
 #                                                          Authorship & Credits
 # =============================================================================
@@ -116,7 +116,7 @@ LossFunction = Callable[..., Float[Array, ""]]
 
 
 #: Population size: a literal ``int`` or a callable deriving one from the
-#: problem dimensionality (see :mod:`l2co_optimizers._src.popsize`).
+#: problem dimensionality (see :mod:`l2co_optimizers._src.core.popsize`).
 PopSize = int | Callable[[int], int]
 
 SamplerFunction = Callable[[PRNGKeyArray, PyTree, int], InputParameters]

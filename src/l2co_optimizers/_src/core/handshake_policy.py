@@ -55,8 +55,8 @@ import jax.numpy as jnp
 from jaxtyping import PRNGKeyArray, PyTree
 
 # Local
-from l2co_optimizers._src.optimizer_schedule import OptimizationStep
-from l2co_optimizers._src.typing import SamplerFunction
+from l2co_optimizers._src.core.optimizer_schedule import OptimizationStep
+from l2co_optimizers._src.core.typing import SamplerFunction
 
 #                                                          Authorship & Credits
 # =============================================================================
@@ -229,8 +229,8 @@ def population_best_one(
     The ``"best_one"`` variant: ``popsize`` draws from ``sampler``, with
     ``best_params`` written into the **last** slot. Note the draws are
     *not* centred on ``best_params`` -- every sampler in
-    :mod:`l2co_optimizers._src.sampler` uses ``params`` for shape and dtype
-    only (``_sample``), so this is a fresh draw from the sampler's own
+    :mod:`l2co_optimizers._src.core.sampler` uses ``params`` for shape and
+    dtype only (``_sample``), so this is a fresh draw from the sampler's own
     distribution with the best point injected, not a local perturbation
     of it.
 

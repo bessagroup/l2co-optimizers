@@ -69,23 +69,23 @@ from optax import OptState as OptaxState
 from optax._src.linesearch import zoom_linesearch
 
 # Local
-from l2co_optimizers._src.opt_history import OptHistory
-from l2co_optimizers._src.optax_implementations import (
-    optax_update_extra_kwargs,
-    step_fevals,
-)
-from l2co_optimizers._src.state_transfer import (
+from l2co_optimizers._src.core.opt_history import OptHistory
+from l2co_optimizers._src.core.state_transfer import (
     FAMILY_GRADIENT,
     build_transfer_fns,
 )
-from l2co_optimizers._src.typing import (
+from l2co_optimizers._src.core.typing import (
     InitFunction,
     InputParameters,
     LossFunction,
     StepFunction,
     StopFunction,
 )
-from l2co_optimizers._src.update_class import UpdateClass
+from l2co_optimizers._src.core.update_class import UpdateClass
+from l2co_optimizers._src.optax_implementations import (
+    optax_update_extra_kwargs,
+    step_fevals,
+)
 
 #                                                          Authorship & Credits
 # =============================================================================

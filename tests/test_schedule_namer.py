@@ -13,7 +13,7 @@ import pytest
 
 # Local
 from l2co_optimizers import OptimizationStep, register_schedule_namer
-from l2co_optimizers._src import optimizer_schedule
+from l2co_optimizers._src.core import optimizer_schedule
 
 #                                                          Authorship & Credits
 # =============================================================================

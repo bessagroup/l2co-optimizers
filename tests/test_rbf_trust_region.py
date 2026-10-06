@@ -217,8 +217,8 @@ def test_the_registry_resolves_every_spelling_of_the_name() -> None:
     and that failed at run time -- 768 cells into a campaign -- rather
     than at registration.
     """
+    from l2co_optimizers._src.core.utils import normalize_key
     from l2co_optimizers._src.mapping import optimizer_mapping
-    from l2co_optimizers._src.utils import normalize_key
 
     for spelling in ("rbf_trust_region", "rbftrustregion", "RBF_Trust_Region"):
         assert optimizer_mapping(spelling) is optimizer_mapping(
@@ -228,8 +228,8 @@ def test_the_registry_resolves_every_spelling_of_the_name() -> None:
 
 def test_every_registry_key_is_already_normalized() -> None:
     """A raw key would be unreachable from the normalizing call path."""
+    from l2co_optimizers._src.core.utils import normalize_key
     from l2co_optimizers._src.mapping import optimizers
-    from l2co_optimizers._src.utils import normalize_key
 
     unreachable = [k for k in optimizers if normalize_key(k) != k]
     assert not unreachable, (
