@@ -40,9 +40,11 @@ import l2co_optimizers._src.random_search as rs_mod
 from l2co_optimizers import (
     BatchState,
     HistoryState,
-    RandomSearchUpdateClass,
     UpdateClass,
     optimizer_mapping,
+)
+from l2co_optimizers._src.random_search import (
+    RandomSearchUpdateClass,
 )
 
 from .toy_problems import sphere_problem

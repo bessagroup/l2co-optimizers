@@ -1,6 +1,6 @@
 # API Reference
 
-The whole public surface is the flat `l2co_optimizers` namespace. It is organised here the way an optimizer author meets it: the registry and the container every factory returns, the loop that runs it, the spec that names an optimizer, the contract types, then the built-in factories, and finally the strategy-facing layer meta-optimizers dispatch through.
+The whole public surface is the flat `l2co_optimizers` namespace. It holds what the sibling packages use, plus what an author of a new bare optimizer needs (the registry, `UpdateClass` and its contract types, the loss helpers, state transfer); the per-library factories and tables behind the registry are private. It is organised here the way an optimizer author meets it: the registry and the container every factory returns, the loop that runs it, the spec that names an optimizer, the contract types, then the strategy-facing layer meta-optimizers dispatch through. The built-in optimizers are reached by registry name (`optimizer_mapping("shade")`), not by class.
 
 ## Registry & construction
 
@@ -14,9 +14,7 @@ The whole public surface is the flat `l2co_optimizers` namespace. It is organise
 
 ### Per-library registries
 
-`optimizers` is the merge of one name -> factory dict per library, each also exported on its own: `optax_mapping`, `evosax_mapping` (built from `normalized_evosax`, the normalized-name -> evosax class table), `lbfgs_mapping`, `shade_mapping`, `turbo_mapping`, `rbf_trust_region_mapping` and `random_search_mapping`. Consumers use them to group optimizers by library, e.g. l2co's plot categories.
-
-::: l2co_optimizers.RandomSearchUpdateClass
+`optimizers` is the merge of one name -> factory dict per library. The ones l2co groups its plot categories by are exported on their own: `optax_mapping`, `normalized_evosax` (the normalized-name -> evosax class table), `normalized_optax_normal`, `lbfgs_mapping`, `shade_mapping`, `turbo_mapping` and `rbf_trust_region_mapping`.
 
 ## Running an optimizer
 
@@ -28,15 +26,13 @@ The run loop is a set of [`UpdateClass`](#l2co_optimizers.UpdateClass) methods (
 
 ### Run state
 
-`RunState` bundles one optimizer's population, running best, optimizer state and `UpdateClass`. `RunState.init` builds it from an already-built `UpdateClass`, a `model`, a `dataset` and a `batch_size`; `reset` samples a fresh population, and `run` / `batch_run` / `batch_evaluate` hand the state to the methods above. Resolving an `OptimizationStep` against a task is l2co's `init_run_state`.
+`RunState` bundles one optimizer's population, running best, optimizer state and `UpdateClass`. `RunState.init` builds it from an already-built `UpdateClass`, a `model`, a `dataset` and a `batch_size`; `reset` / `batch_reset` sample a fresh population, and `run` / `batch_evaluate` hand the state to the methods above. Resolving an `OptimizationStep` against a task is l2co's `init_run_state`.
 
 ::: l2co_optimizers.RunState
 
 ::: l2co_optimizers.reset
 
 ::: l2co_optimizers.run
-
-::: l2co_optimizers.batch_run
 
 ::: l2co_optimizers.batch_evaluate
 
@@ -82,43 +78,17 @@ The run loop is a set of [`UpdateClass`](#l2co_optimizers.UpdateClass) methods (
 
 ::: l2co_optimizers.count_parameters
 
-::: l2co_optimizers.variable_popsize
-
-::: l2co_optimizers.variable_popsize_even
-
 ::: l2co_optimizers.shade_popsize
-
-## Base optimizer factories
-
-::: l2co_optimizers.optax_update
-
-::: l2co_optimizers.optax_update_extra_kwargs
-
-::: l2co_optimizers.evosax_distribution_update
-
-::: l2co_optimizers.evosax_population_update
-
-::: l2co_optimizers.random_search_update
 
 ## Built-in algorithms
 
-::: l2co_optimizers.SHADE
-
 ::: l2co_optimizers.shade_update
-
-::: l2co_optimizers.lbfgs_update
-
-::: l2co_optimizers.lbfgs_per_eval_key
 
 ## Sub-optimizer adapter
 
 ::: l2co_optimizers.SubOpt
 
 ::: l2co_optimizers.optstep_to_subopt
-
-::: l2co_optimizers.grad_sub_optimizer
-
-::: l2co_optimizers.pop_sub_optimizer
 
 ::: l2co_optimizers.resolve_popsize
 
@@ -132,8 +102,4 @@ The run loop is a set of [`UpdateClass`](#l2co_optimizers.UpdateClass) methods (
 
 ::: l2co_optimizers.TransferBundle
 
-::: l2co_optimizers.TransferSpec
-
 ::: l2co_optimizers.build_transfer_fns
-
-::: l2co_optimizers.transfer_spec_for

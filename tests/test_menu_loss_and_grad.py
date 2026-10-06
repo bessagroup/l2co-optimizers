@@ -22,11 +22,13 @@ import pytest
 
 # Local
 from l2co_optimizers import (
-    GRAD_EVALUATION_WIDTH,
     SubOpt,
     menu_loss_and_grad,
     vmapped_loss,
     vmapped_loss_and_grad,
+)
+from l2co_optimizers._src.menu_eval import (
+    GRAD_EVALUATION_WIDTH,
 )
 
 #                                                          Authorship & Credits
