@@ -29,6 +29,7 @@ def test_all_symbols_are_importable():
         ("register_optimizer", "l2co_optimizers._src.mapping"),
         ("optimizer_mapping", "l2co_optimizers._src.mapping"),
         ("optimizers", "l2co_optimizers._src.mapping"),
+        ("normalize_key", "l2co_optimizers._src.utils"),
         # Contract types
         ("InitFunction", "l2co_optimizers._src.typing"),
         ("StepFunction", "l2co_optimizers._src.typing"),

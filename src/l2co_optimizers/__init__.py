@@ -168,6 +168,7 @@ from l2co_optimizers._src.update_class import (
     RunResult,
     UpdateClass,
 )
+from l2co_optimizers._src.utils import normalize_key
 
 #                                                          Authorship & Credits
 # =============================================================================
@@ -244,6 +245,7 @@ __all__ = [
     "lbfgs_update",
     "menu_loss_and_grad",
     "normal_sampling",
+    "normalize_key",
     "normalized_evosax",
     "normalized_optax_from_state",
     "normalized_optax_normal",
