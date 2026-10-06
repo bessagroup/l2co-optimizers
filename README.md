@@ -1,6 +1,8 @@
 # L2CO Optimizers
 
-[**GitHub**](https://github.com/bessagroup/l2co-optimizers)
+| [**GitHub**](https://github.com/bessagroup/l2co-optimizers)
+| [**PyPI**](https://pypi.org/project/l2co-optimizers/)
+| [**Documentation**](https://l2co-optimizers.readthedocs.io/)
 
 Bare optimizers compatible with the L2CO library
 
