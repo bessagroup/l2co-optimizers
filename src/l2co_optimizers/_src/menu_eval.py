@@ -214,12 +214,12 @@ def menu_loss_and_grad(
         the caller will pass in. Must be at least the widest
         evaluation width in the menu.
     static : PyTree
-        Non-inexact-array partition of ``task.model``, recombined with
+        Non-inexact-array partition of the model, recombined with
         each candidate row via :func:`equinox.combine`.
     loss_fn : LossFunction
-        The task loss (``task.loss_fn``).
+        The loss being optimized.
     pass_rng : bool
-        Whether ``loss_fn`` takes a ``key`` keyword (``task.pass_rng``).
+        Whether ``loss_fn`` takes a ``key`` keyword.
 
     Returns
     -------

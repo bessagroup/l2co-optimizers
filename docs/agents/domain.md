@@ -21,7 +21,8 @@ If any of these files don't exist, **proceed silently**. Don't flag their absenc
 - l2co ADR 0009 — the shared handshake policy table (`HANDSHAKE_POLICY`).
 - l2co ADR 0011 — per-optimizer evaluation width on the strategy bridge (`menu_loss_and_grad`).
 - l2co ADR 0012 / 0013 / 0014 — state transfer: ask-coupled state, the transfer bundle as an interlingua, own-ask as a per-optimizer property.
-- l2co ADR 0016 — the extraction of this package: the `TaskLike` protocol, what moved, what stayed in l2co.
+- l2co ADR 0016 — the extraction of this package: what moved, what stayed in l2co.
+- l2co ADR 0018 — the task stops at l2co: no task type here, factories take `model` / `loss_fn` / `pass_rng`, meta-optimizers register with l2co.
 
 New decisions that concern only this package get their own ADRs here, numbered from 0001.
 

@@ -1,17 +1,18 @@
 """``RunState`` and its rollout entry points (moved from l2co, ADR 0017).
 
-These drive :class:`RunState` on the toy tasks, so they need neither
+These drive :class:`RunState` on the toy problems, so they need neither
 l2co nor ``l2co_tasks``:
 
-1. ``RunState.init`` resolves the optimizer through the registry and
-   builds a population-shaped state from a :class:`RunnableTaskLike`.
-2. ``evaluate`` scores a population through the task's loss, with and
+1. ``RunState.init`` builds a population-shaped state from an
+   already-built ``UpdateClass``, a model and a dataset.
+2. ``evaluate`` scores a population through the loss, with and
    without a ``key``.
 3. ``reset`` keeps the best of a fresh sample as the running best.
 4. ``run`` / ``batch_evaluate`` are thin rewraps of the ``UpdateClass``
    run loop: same numbers, a realization axis on every array field.
 
-The real-``Task`` path is in ``test_l2co_tasks_integration.py``.
+Resolving an ``OptimizationStep`` against a real ``Task`` is l2co's
+``init_run_state`` and is tested there.
 """
 
 from __future__ import annotations
@@ -27,16 +28,16 @@ from l2co_optimizers import (
     BatchState,
     HistoryState,
     OptimizationStep,
-    RunnableTaskLike,
     RunState,
     batch_evaluate,
     evaluate,
     normal_sampling,
+    optimizer_mapping,
     reset,
     run,
 )
 
-from .toy_tasks import noisy_sphere_task, sphere_task
+from .toy_problems import noisy_sphere_problem, sphere_problem
 
 DIM = 4
 N_ITERATIONS = 5
@@ -51,43 +52,46 @@ _STEPS = [
 _STEP_IDS = [step.optimizer for step in _STEPS]
 
 
-def _init(step: OptimizationStep, task=None, key=None) -> RunState:
-    return RunState.init(
-        optimizer=step,
-        task=sphere_task(DIM) if task is None else task,
+def _init(step: OptimizationStep, problem=None, key=None) -> RunState:
+    problem = sphere_problem(DIM) if problem is None else problem
+    update_class = optimizer_mapping(step.optimizer)(
+        **step.hyperparameters,
+        **problem,
+        opt_hash=step.hash,
         bounded=(None, None),
+        stop_fn=step.stopping_fn,
+    )
+    return RunState.init(
+        update_class,
+        model=problem["model"],
+        dataset={},
+        batch_size=None,
         key=jr.key(0) if key is None else key,
     )
 
 
-def _batch_state(task) -> BatchState:
-    return BatchState.init(
-        dataset=task.loaded_dataset, batch_size=task.batch_size, key=jr.key(0)
-    )
+def _batch_state() -> BatchState:
+    return BatchState.init(dataset={}, batch_size=None, key=jr.key(0))
 
 
 #                                                                     init
 # =============================================================================
 
 
-def test_toy_task_is_runnable_tasklike():
-    assert isinstance(sphere_task(DIM), RunnableTaskLike)
-
-
 @pytest.mark.parametrize("step", _STEPS, ids=_STEP_IDS)
 def test_init_builds_a_population_shaped_state(step):
-    task = sphere_task(DIM)
-    run_state = _init(step, task)
+    problem = sphere_problem(DIM)
+    run_state = _init(step, problem)
 
     popsize = run_state.update_class.popsize
     assert run_state.params.shape == (popsize, DIM)
-    # Every member starts at the task's (placeholder) model.
+    # Every member starts at the (placeholder) model.
     assert np.array_equal(
         np.asarray(run_state.params),
-        np.broadcast_to(np.asarray(task.model), (popsize, DIM)),
+        np.broadcast_to(np.asarray(problem["model"]), (popsize, DIM)),
     )
     assert np.array_equal(
-        np.asarray(run_state.best_params), np.asarray(task.model)
+        np.asarray(run_state.best_params), np.asarray(problem["model"])
     )
     assert float(run_state.best_loss) == float("inf")
 
@@ -97,37 +101,37 @@ def test_init_builds_a_population_shaped_state(step):
 
 
 def test_evaluate_scores_every_member():
-    task = sphere_task(DIM)
+    problem = sphere_problem(DIM)
     population = jr.normal(jr.key(1), (6, DIM))
     key = jr.key(2)
 
     loss = evaluate(
         population,
-        _batch_state(task),
-        task.loaded_dataset,
-        task.loss_fn,
-        task.pass_rng,
+        _batch_state(),
+        {},
+        problem["loss_fn"],
+        problem["pass_rng"],
         key,
         jr.split(key, 6),
     )
 
-    expected = jax.vmap(task.loss_fn)(population)
+    expected = jax.vmap(problem["loss_fn"])(population)
     assert loss.shape == (6,)
     assert np.allclose(np.asarray(loss), np.asarray(expected))
 
 
 def test_evaluate_hands_each_member_its_own_key():
-    task = noisy_sphere_task(DIM)
+    problem = noisy_sphere_problem(DIM)
     # Identical members: only the per-member loss key can tell them apart.
     population = jnp.zeros((6, DIM))
     key = jr.key(3)
 
     loss = evaluate(
         population,
-        _batch_state(task),
-        task.loaded_dataset,
-        task.loss_fn,
-        task.pass_rng,
+        _batch_state(),
+        {},
+        problem["loss_fn"],
+        problem["pass_rng"],
         key,
         jr.split(key, 6),
     )
@@ -141,27 +145,27 @@ def test_evaluate_hands_each_member_its_own_key():
 
 @pytest.mark.parametrize("step", _STEPS, ids=_STEP_IDS)
 def test_reset_keeps_the_best_of_the_fresh_sample(step):
-    task = sphere_task(DIM)
-    run_state = _init(step, task)
-    static = eqx.filter(task.model, eqx.is_inexact_array, inverse=True)
+    problem = sphere_problem(DIM)
+    run_state = _init(step, problem)
+    static = eqx.filter(problem["model"], eqx.is_inexact_array, inverse=True)
 
     reset_state = reset(
         run_state,
-        _batch_state(task),
+        _batch_state(),
         static,
-        task.loaded_dataset,
-        task.loss_fn,
-        task.pass_rng,
+        {},
+        problem["loss_fn"],
+        problem["pass_rng"],
         normal_sampling,
         jr.key(4),
     )
 
-    losses = jax.vmap(task.loss_fn)(reset_state.params)
+    losses = jax.vmap(problem["loss_fn"])(reset_state.params)
     assert float(reset_state.best_loss) == pytest.approx(
         float(jnp.min(losses))
     )
     assert float(reset_state.best_loss) == pytest.approx(
-        float(task.loss_fn(reset_state.best_params))
+        float(problem["loss_fn"](reset_state.best_params))
     )
     assert reset_state.update_class is run_state.update_class
 
@@ -172,12 +176,12 @@ def test_reset_keeps_the_best_of_the_fresh_sample(step):
 
 @pytest.mark.parametrize("step", _STEPS, ids=_STEP_IDS)
 def test_run_rewraps_the_update_class_run(step):
-    task = sphere_task(DIM)
-    run_state = _init(step, task)
-    batch_state = _batch_state(task)
+    problem = sphere_problem(DIM)
+    run_state = _init(step, problem)
+    batch_state = _batch_state()
     kwargs = dict(
         batch_state=batch_state,
-        dataset=task.loaded_dataset,
+        dataset={},
         n_iterations=N_ITERATIONS,
         key=jr.key(5),
         verbose=False,
@@ -206,19 +210,19 @@ def test_run_rewraps_the_update_class_run(step):
 
 @pytest.mark.parametrize("step", _STEPS, ids=_STEP_IDS)
 def test_batch_evaluate_adds_a_realization_axis(step):
-    task = sphere_task(DIM)
-    run_state = _init(step, task)
-    static = eqx.filter(task.model, eqx.is_inexact_array, inverse=True)
+    problem = sphere_problem(DIM)
+    run_state = _init(step, problem)
+    static = eqx.filter(problem["model"], eqx.is_inexact_array, inverse=True)
 
     new_state, _, history = batch_evaluate(
         run_state=run_state,
-        batch_state=_batch_state(task),
+        batch_state=_batch_state(),
         static=static,
-        dataset=task.loaded_dataset,
-        loss_fn=task.loss_fn,
+        dataset={},
+        loss_fn=problem["loss_fn"],
         sampler=normal_sampling,
         n_iterations=N_ITERATIONS,
-        pass_rng=task.pass_rng,
+        pass_rng=problem["pass_rng"],
         key=jr.split(jr.key(6), N_REALIZATIONS),
         verbose=False,
     )
@@ -233,6 +237,6 @@ def test_batch_evaluate_adds_a_realization_axis(step):
     # The running best is the realization's own best evaluation.
     assert np.allclose(
         np.asarray(new_state.best_loss),
-        np.asarray(jax.vmap(task.loss_fn)(new_state.best_params)),
+        np.asarray(jax.vmap(problem["loss_fn"])(new_state.best_params)),
         rtol=1e-5,
     )

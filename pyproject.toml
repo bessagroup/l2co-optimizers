@@ -68,8 +68,7 @@ filterwarnings = [
 ]
 markers = [
   "slow: test runs a long optimization loop",
-  "requires_f3dasm: test constructs an f3dasm.ExperimentData",
-  "requires_l2co_tasks: drives real l2co_tasks.Task objects (skipped unless l2co_tasks imports)"
+  "requires_f3dasm: test constructs an f3dasm.ExperimentData"
 ]
 testpaths = ["tests"]
 
@@ -109,7 +108,7 @@ select = [
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "l2co".msg = "l2co-optimizers must not import l2co (l2co depends on this package)."
-"l2co_tasks".msg = "l2co-optimizers must not import l2co_tasks; take a TaskLike instead."
+"l2co_tasks".msg = "l2co-optimizers must not import l2co_tasks; take model/loss_fn/pass_rng instead (l2co ADR 0018)."
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "E402"]

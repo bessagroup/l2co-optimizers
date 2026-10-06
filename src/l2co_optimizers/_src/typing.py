@@ -1,11 +1,11 @@
 """
-Type aliases and protocols forming the optimizer contract.
+Type aliases forming the optimizer contract.
 
 These are the types an optimizer author implements against: what a
-step consumes and returns, what a stopping check sees, and
-:class:`TaskLike`, the view of a task an optimizer factory takes, and
-:class:`RunnableTaskLike`, the slightly wider one
-:meth:`RunState.init` builds a run from.
+step consumes and returns, what a stopping check sees, and the loss a
+factory is handed. There is no task type: a factory takes ``model``,
+``loss_fn`` and ``pass_rng`` as separate keywords, and the bridge
+from a task to those lives in ``l2co``.
 """
 
 #                                                                       Modules
@@ -17,7 +17,7 @@ from abc import abstractmethod
 
 # Standard
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING
 
 import equinox as eqx
 
@@ -110,64 +110,15 @@ TransferReadFunction = Callable[
 TransferWriteFunction = Callable[["TransferBundle", OptState], OptState]
 
 #: ``loss_fn(model, **sample) -> loss`` for one (unbatched) model, or
-#: ``loss_fn(model, key=key, **sample)`` when ``task.pass_rng``. Scalar
+#: ``loss_fn(model, key=key, **sample)`` when ``pass_rng``. Scalar
 #: output; the ``vmapped_loss*`` helpers add the population axis.
 #: ``Callable[...]`` because the batch arrives as keyword arguments.
 LossFunction = Callable[..., Float[Array, ""]]
 
 
-@runtime_checkable
-class TaskLike(Protocol):
-    """The view of a task an optimizer factory takes.
-
-    Structural: any object with these three attributes qualifies, so
-    ``l2co_tasks.Task`` satisfies it without either package importing
-    the other. Meta-optimizer factories registered into the same
-    registry may require more (a full ``Task``); the bare optimizers
-    read only these.
-
-    Attributes
-    ----------
-    model : PyTree
-        Model whose inexact-array leaves are optimized; the rest is
-        recombined as static structure.
-    loss_fn : Callable
-        ``loss_fn(model, **sample)`` -- or ``loss_fn(model, key=key,
-        **sample)`` when :attr:`pass_rng` -- returning a scalar loss.
-    pass_rng : bool
-        Whether ``loss_fn`` takes a ``key`` keyword (a stochastic loss).
-    """
-
-    model: PyTree
-    loss_fn: Callable
-    pass_rng: bool
-
-
-@runtime_checkable
-class RunnableTaskLike(TaskLike, Protocol):
-    """The view of a task :meth:`RunState.init` builds a run from.
-
-    :class:`TaskLike` plus the data a run batches over. Kept apart from
-    :class:`TaskLike` so optimizer factories keep requiring only what
-    they read. ``l2co_tasks.Task`` satisfies it structurally.
-
-    Attributes
-    ----------
-    loaded_dataset : dict[str, Array]
-        The dataset the loss is evaluated on, as a plain dict of arrays
-        sharing a leading sample axis (empty for a data-free task).
-    batch_size : int or None
-        Mini-batch size drawn from ``loaded_dataset`` per evaluation;
-        ``None`` for the full batch.
-    """
-
-    loaded_dataset: dict[str, Array]
-    batch_size: int | None
-
-
 #: Population size: a literal ``int`` or a callable deriving one from the
-#: task (see :mod:`l2co_optimizers._src.popsize`).
-PopSize = int | Callable[[TaskLike], int]
+#: problem dimensionality (see :mod:`l2co_optimizers._src.popsize`).
+PopSize = int | Callable[[int], int]
 
 SamplerFunction = Callable[[PRNGKeyArray, PyTree, int], InputParameters]
 

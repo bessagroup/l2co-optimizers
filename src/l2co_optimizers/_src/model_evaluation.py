@@ -1,5 +1,5 @@
 """
-Scoring models through a task's loss on one batch.
+Scoring models through a loss on one batch.
 
 :func:`evaluate` is what :func:`~l2co_optimizers.reset` uses to pick the
 best of a freshly sampled population, and what l2co's plotting helpers

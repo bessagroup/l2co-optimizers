@@ -65,7 +65,7 @@ from l2co_optimizers._src.state_transfer import (
     transfer_spec_for,
 )
 from l2co_optimizers._src.turbo import TuRBO
-from l2co_optimizers._src.typing import TaskLike
+from l2co_optimizers._src.typing import LossFunction
 from l2co_optimizers._src.utils import normalize_key
 
 # =============================================================================
@@ -531,7 +531,13 @@ def pop_sub_optimizer(
 # =============================================================================
 
 
-def resolve_popsize(opt_step: OptimizationStep, task: TaskLike) -> int:
+def resolve_popsize(
+    opt_step: OptimizationStep,
+    *,
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
+) -> int:
     """Resolve the canonical popsize for ``opt_step`` via l2co's rules.
 
     Builds an :class:`~l2co_optimizers._src.update_class.UpdateClass`
@@ -548,11 +554,13 @@ def resolve_popsize(opt_step: OptimizationStep, task: TaskLike) -> int:
     opt_step : OptimizationStep
         Source spec; ``opt_step.hyperparameters`` (including any
         explicit ``popsize`` kwarg) is forwarded to the factory.
-    task : TaskLike
-        Forwarded to :func:`~l2co_optimizers._src.mapping.
-        optimizer_mapping`; needed because some evosax algorithms
-        read the model dimensionality from ``task`` when computing
-        their default popsize.
+    model : PyTree
+        Forwarded to the factory; its parameter count drives the
+        default popsize of the population-based optimizers.
+    loss_fn : LossFunction
+        Forwarded to the factory, which needs one to build.
+    pass_rng : bool
+        Forwarded to the factory, which needs one to build.
 
     Returns
     -------
@@ -560,7 +568,9 @@ def resolve_popsize(opt_step: OptimizationStep, task: TaskLike) -> int:
         Resolved popsize.
     """
     update_class = optimizer_mapping(normalize_key(opt_step.optimizer))(
-        task=task,
+        model=model,
+        loss_fn=loss_fn,
+        pass_rng=pass_rng,
         opt_hash=opt_step.hash,
         bounded=(None, None),
         stop_fn=opt_step.stopping_fn,
@@ -571,7 +581,10 @@ def resolve_popsize(opt_step: OptimizationStep, task: TaskLike) -> int:
 
 def optstep_to_subopt(
     opt_step: OptimizationStep,
-    task: TaskLike,
+    *,
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
 ) -> SubOpt:
     """Convert one :class:`OptimizationStep` to a :class:`SubOpt`.
 
@@ -594,10 +607,10 @@ def optstep_to_subopt(
     reaching a line search here is the caller's plain ``params ->
     scalar`` callable, with no key to split. ``'lbfgs'`` therefore
     resolves to :func:`~l2co_optimizers._src.lbfgs.stock_lbfgs` on
-    *every* task, including stochastic ones — whereas the registry
+    *every* problem, including stochastic ones — whereas the registry
     factory :func:`~l2co_optimizers._src.lbfgs.lbfgs_update` switches
     to :func:`~l2co_optimizers._src.lbfgs.lbfgs_per_eval_key` when
-    ``task.pass_rng`` is set. On a stochastic task the noise contract
+    ``pass_rng`` is set. On a stochastic task the noise contract
     of a wrapper-driven L-BFGS is whatever the caller's ``value_fn``
     implements, not the one-realization-per-evaluation contract the
     registry path guarantees — see
@@ -614,10 +627,14 @@ def optstep_to_subopt(
         ``popsize`` itself and any :data:`CONSTRUCTOR_HYPERPARAMETERS`
         entries, which go to the algorithm constructor rather than
         its ``Params``).
-    task : TaskLike
-        Task containing the model whose trainable arrays size the
-        evosax ``solution=`` template, and which is forwarded to
+    model : PyTree
+        Model whose trainable arrays size the evosax ``solution=``
+        template; forwarded with ``loss_fn`` and ``pass_rng`` to
         :func:`resolve_popsize` for popsize resolution.
+    loss_fn : LossFunction
+        Forwarded to :func:`resolve_popsize`.
+    pass_rng : bool
+        Forwarded to :func:`resolve_popsize`.
 
     Returns
     -------
@@ -631,7 +648,9 @@ def optstep_to_subopt(
     """
     name = normalize_key(opt_step.optimizer)
     hyperparams = dict(opt_step.hyperparameters)
-    popsize = resolve_popsize(opt_step, task)
+    popsize = resolve_popsize(
+        opt_step, model=model, loss_fn=loss_fn, pass_rng=pass_rng
+    )
 
     # ``popsize`` has now been consumed by ``resolve_popsize``;
     # strip it before forwarding ``hyperparams`` to the optax /
@@ -683,9 +702,9 @@ def optstep_to_subopt(
             if kwarg in hyperparams
         }
         # evosax wants ``solution`` to infer per-candidate shape;
-        # ``task.model``'s trainable arrays are the standard template
+        # ``model``'s trainable arrays are the standard template
         # (matching ``RunState.init``).
-        solution_template = eqx.filter(task.model, eqx.is_inexact_array)
+        solution_template = eqx.filter(model, eqx.is_inexact_array)
         algo = algo_cls(
             population_size=popsize,
             solution=solution_template,

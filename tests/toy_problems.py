@@ -1,10 +1,12 @@
-"""Toy ``TaskLike`` objectives and a minimal driver, for tests only.
+"""Toy objectives and a minimal driver, for tests only.
 
 l2co-optimizers depends on neither ``l2co`` nor ``l2co_tasks``, so its
-tests cannot borrow their tasks or rollout loop. These stand-ins are the
-smallest objects that satisfy :class:`l2co_optimizers.TaskLike`: a model
-(a flat parameter vector), a loss and a ``pass_rng`` flag. Building every
-optimizer from them is itself the check that the protocol is enough.
+tests cannot borrow their tasks or rollout loop. Each helper here
+returns the three keywords a factory takes -- ``model`` (a flat
+parameter vector), ``loss_fn`` and ``pass_rng`` -- as a dict, so a test
+builds an optimizer with ``factory(**sphere_problem(), opt_hash=0, ...)``.
+There is deliberately no task-shaped object: the package's contract is
+the keywords, and the tests use exactly that.
 
 :func:`run_steps` is a bare ``init_fn`` then ``step_fn`` loop in Python,
 for tests that inspect every generation's ``OptHistory``. The real loop
@@ -14,28 +16,11 @@ is :meth:`UpdateClass.run` (``tests/test_run_loop.py``).
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-
-
-@dataclass(frozen=True)
-class ToyTask:
-    """Smallest object satisfying :class:`l2co_optimizers.TaskLike`.
-
-    Also satisfies :class:`l2co_optimizers.RunnableTaskLike`: the toy
-    objectives are data-free, so the dataset is empty and full-batch.
-    """
-
-    model: jax.Array
-    loss_fn: Callable
-    pass_rng: bool = False
-    global_min: float | None = None  # unused by optimizers; kept for parity
-    loaded_dataset: dict[str, jax.Array] = field(default_factory=dict)
-    batch_size: int | None = None
 
 
 def _sphere(x, **_):
@@ -51,31 +36,31 @@ def _noisy_sphere(x, *, key, **_):
     return _sphere(x) + 0.01 * jr.normal(key)
 
 
-def sphere_task(dimensionality: int = 4) -> ToyTask:
+def quadratic_problem(
+    model: jax.Array, loss_fn: Callable, pass_rng: bool = False
+) -> dict:
+    """The factory keywords for a caller-supplied model and loss."""
+    return {"model": model, "loss_fn": loss_fn, "pass_rng": pass_rng}
+
+
+def sphere_problem(dimensionality: int = 4) -> dict:
     """Shifted sphere, minimum ``0`` at ``x = 0.5``; starts at the origin."""
-    return ToyTask(model=jnp.zeros(dimensionality), loss_fn=_sphere)
+    return quadratic_problem(jnp.zeros(dimensionality), _sphere)
 
 
-def rastrigin_task(dimensionality: int = 6) -> ToyTask:
+def rastrigin_problem(dimensionality: int = 6) -> dict:
     """Shifted Rastrigin, minimum ``0`` at ``x = 0.5``; multimodal."""
-    return ToyTask(model=jnp.zeros(dimensionality), loss_fn=_rastrigin)
+    return quadratic_problem(jnp.zeros(dimensionality), _rastrigin)
 
 
-def noisy_sphere_task(dimensionality: int = 4) -> ToyTask:
+def noisy_sphere_problem(dimensionality: int = 4) -> dict:
     """Stochastic sphere: ``loss_fn`` takes a ``key`` (``pass_rng=True``)."""
-    return ToyTask(
-        model=jnp.zeros(dimensionality),
-        loss_fn=_noisy_sphere,
-        pass_rng=True,
+    return quadratic_problem(
+        jnp.zeros(dimensionality), _noisy_sphere, pass_rng=True
     )
 
 
-def quadratic_task(model: jax.Array, loss_fn: Callable, pass_rng=False):
-    """A ``ToyTask`` around a caller-supplied model and loss."""
-    return ToyTask(model=model, loss_fn=loss_fn, pass_rng=pass_rng)
-
-
-def run_steps(update_class, task, n_steps: int, key=None):
+def run_steps(update_class, model, n_steps: int, key=None):
     """Drive ``update_class`` for ``n_steps`` generations; test-only.
 
     Mirrors the shape contract of :meth:`UpdateClass.run`: the
@@ -89,7 +74,7 @@ def run_steps(update_class, task, n_steps: int, key=None):
         generation.
     """
     key = jr.key(0) if key is None else key
-    params, _ = eqx.partition(task.model, eqx.is_inexact_array)
+    params, _ = eqx.partition(model, eqx.is_inexact_array)
     params = jax.tree.map(
         lambda x: jnp.repeat(x[None], update_class.popsize, axis=0), params
     )

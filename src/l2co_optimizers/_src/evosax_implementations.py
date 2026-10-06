@@ -67,7 +67,6 @@ from l2co_optimizers._src.typing import (
     PopSize,
     StepFunction,
     StopFunction,
-    TaskLike,
 )
 from l2co_optimizers._src.update_class import UpdateClass
 from l2co_optimizers._src.utils import normalize_key
@@ -358,7 +357,10 @@ def evosax_population_based_fn(
 
 
 def evosax_distribution_update(
-    task: TaskLike,
+    *,
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
     optimizer: type[DistributionBasedAlgorithm],
     opt_hash: int,
     popsize: PopSize = variable_popsize,
@@ -372,13 +374,19 @@ def evosax_distribution_update(
 
     Parameters
     ----------
-    task : TaskLike
-        Task providing the model and loss function.
+    model : PyTree
+        Model whose inexact-array leaves are optimized; the rest is
+        recombined as static structure.
+    loss_fn : LossFunction
+        ``loss_fn(model, **sample)`` -- or ``loss_fn(model, key=key,
+        **sample)`` when ``pass_rng`` -- returning a scalar loss.
+    pass_rng : bool
+        Whether ``loss_fn`` takes a ``key`` keyword (a stochastic loss).
     optimizer : type[DistributionBasedAlgorithm]
         EvoSax algorithm class.
     opt_hash : int
         Stable hash stamped into ``OptHistory.update_step``.
-    popsize : int or Callable[[TaskLike], int], optional
+    popsize : int or Callable[[int], int], optional
         Population size; either an integer or a callable taking the
         ``Task`` and returning an integer. Defaults to
         :func:`variable_popsize` (``int(4 + 3 * log(d))``).
@@ -404,8 +412,8 @@ def evosax_distribution_update(
     UpdateClass
         Configured optimizer wrapper.
     """
-    popsize = resolve_popsize(popsize, task)
-    params, static = eqx.partition(task.model, eqx.is_inexact_array)
+    popsize = resolve_popsize(popsize, model)
+    params, static = eqx.partition(model, eqx.is_inexact_array)
 
     optimizer = optimizer(population_size=popsize, solution=params)
     es_params = optimizer.default_params.replace(**hyperparameters)
@@ -413,12 +421,12 @@ def evosax_distribution_update(
     init_fn, step_fn = evosax_distribution_based_fn(
         static=static,
         optimizer=optimizer,
-        loss_fn=task.loss_fn,
+        loss_fn=loss_fn,
         bounded=bounded,
         popsize=popsize,
         es_params=es_params,
         opt_hash=opt_hash,
-        pass_rng=task.pass_rng,
+        pass_rng=pass_rng,
     )
     read_fn, write_fn = build_transfer_fns(
         name,
@@ -441,7 +449,10 @@ def evosax_distribution_update(
 
 
 def evosax_population_update(
-    task: TaskLike,
+    *,
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
     optimizer: type[PopulationBasedAlgorithm],
     opt_hash: int,
     popsize: PopSize = variable_popsize,
@@ -455,13 +466,19 @@ def evosax_population_update(
 
     Parameters
     ----------
-    task : TaskLike
-        Task providing the model and loss function.
+    model : PyTree
+        Model whose inexact-array leaves are optimized; the rest is
+        recombined as static structure.
+    loss_fn : LossFunction
+        ``loss_fn(model, **sample)`` -- or ``loss_fn(model, key=key,
+        **sample)`` when ``pass_rng`` -- returning a scalar loss.
+    pass_rng : bool
+        Whether ``loss_fn`` takes a ``key`` keyword (a stochastic loss).
     optimizer : type[PopulationBasedAlgorithm]
         EvoSax algorithm class.
     opt_hash : int
         Stable hash stamped into ``OptHistory.update_step``.
-    popsize : int or Callable[[TaskLike], int], optional
+    popsize : int or Callable[[int], int], optional
         Population size; either an integer or a callable taking the
         ``Task`` and returning an integer. Defaults to
         :func:`variable_popsize` (``int(4 + 3 * log(d))``).
@@ -487,8 +504,8 @@ def evosax_population_update(
     UpdateClass
         Configured optimizer wrapper.
     """
-    popsize = resolve_popsize(popsize, task)
-    params, static = eqx.partition(task.model, eqx.is_inexact_array)
+    popsize = resolve_popsize(popsize, model)
+    params, static = eqx.partition(model, eqx.is_inexact_array)
 
     optimizer = optimizer(population_size=popsize, solution=params)
     es_params = optimizer.default_params.replace(**hyperparameters)
@@ -496,12 +513,12 @@ def evosax_population_update(
     init_fn, step_fn = evosax_population_based_fn(
         static=static,
         optimizer=optimizer,
-        loss_fn=task.loss_fn,
+        loss_fn=loss_fn,
         bounded=bounded,
         popsize=popsize,
         es_params=es_params,
         opt_hash=opt_hash,
-        pass_rng=task.pass_rng,
+        pass_rng=pass_rng,
     )
     spec = transfer_spec_for(name, FAMILY_POPULATION)
     read_fn, write_fn = build_transfer_fns(

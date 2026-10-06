@@ -13,9 +13,9 @@ It also ships the *strategy-facing* layer meta-optimizers dispatch through: the 
 ## Statement of need
 
 Learning-to-optimize and optimizer-selection research needs many optimizers behind one calling convention, so that a selector can switch between them mid-run. `l2co-optimizers` provides that convention without the meta-learning stack:
-- every optimizer is built by `optimizer_mapping(name)(task=..., opt_hash=..., bounded=..., stop_fn=...)`;
+- every optimizer is built by `optimizer_mapping(name)(model=..., loss_fn=..., pass_rng=..., opt_hash=..., bounded=..., stop_fn=...)`;
 - every one steps through the same `(params, opt_state, key)` carry;
 - every one reports into the same `OptHistory`.
 
-It depends on neither `l2co` nor `l2co-tasks`. A task reaches it only through `TaskLike`, a structural protocol (`model`, `loss_fn`, `pass_rng`) that `l2co_tasks.Task` satisfies unchanged. `l2co` is the bridge that runs one on the other.
+It depends on neither `l2co` nor `l2co-tasks`, and has no notion of a task: factories take `model`, `loss_fn` and `pass_rng` as keywords. `l2co` is the bridge that unpacks an `l2co_tasks.Task` into them (l2co ADR 0018).
 

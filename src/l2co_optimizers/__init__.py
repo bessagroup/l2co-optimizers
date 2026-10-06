@@ -10,15 +10,16 @@ optimizer contract types, the per-library registries, and the
 strategy-facing layer (``SubOpt``, handshake policy, state transfer, menu
 evaluation) that meta-optimizers dispatch through, and :class:`RunState`
 with its ``reset`` / ``run`` / ``batch_evaluate`` entry points, which
-build a run from a task. Meta-optimization strategies themselves, and
-``HistoryState``'s xarray/``DataLoader`` exports, live in ``l2co``
+build a run from a resolved ``UpdateClass``. Meta-optimization
+strategies themselves, and ``HistoryState``'s xarray/``DataLoader``
+exports, live in ``l2co``
 (l2co ADR 0017). The layout of this namespace is documented in
 ``docs/api.md``.
 
-Tasks reach this package only through :class:`TaskLike` (and the wider
-:class:`RunnableTaskLike` that :meth:`RunState.init` takes), structural
-protocols that ``l2co_tasks.Task`` satisfies; neither package imports
-the other.
+There is no task here. A factory takes ``model``, ``loss_fn`` and
+``pass_rng`` as keywords, and :meth:`RunState.init` adds the ``dataset``
+and ``batch_size``; turning an ``l2co_tasks.Task`` into those is
+``l2co``'s job, so neither package imports the other.
 """
 
 #                                                                       Modules
@@ -157,11 +158,9 @@ from l2co_optimizers._src.typing import (
     OptHistoryType,
     OptState,
     PopSize,
-    RunnableTaskLike,
     SamplerFunction,
     StepFunction,
     StopFunction,
-    TaskLike,
     TransferReadFunction,
     TransferWriteFunction,
 )
@@ -214,12 +213,10 @@ __all__ = [
     "RecentHistory",
     "RunResult",
     "RunState",
-    "RunnableTaskLike",
     "SamplerFunction",
     "StepFunction",
     "StopFunction",
     "SubOpt",
-    "TaskLike",
     "TransferBundle",
     "TransferReadFunction",
     "TransferSpec",

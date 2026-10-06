@@ -61,6 +61,7 @@ from evosax.types import Fitness, Population, Solution
 # or plain dataclasses would do.
 from flax import struct
 from jax.tree_util import Partial
+from jaxtyping import PyTree
 
 from l2co_optimizers._src.evosax_implementations import (
     evosax_population_based_fn,
@@ -72,7 +73,11 @@ from l2co_optimizers._src.state_transfer import (
     FAMILY_POPULATION,
     build_transfer_fns,
 )
-from l2co_optimizers._src.typing import PopSize, StopFunction, TaskLike
+from l2co_optimizers._src.typing import (
+    LossFunction,
+    PopSize,
+    StopFunction,
+)
 from l2co_optimizers._src.update_class import UpdateClass
 
 #                                                          Authorship & Credits
@@ -542,7 +547,10 @@ class SHADE(PopulationBasedAlgorithm):
 
 
 def shade_update(
-    task: TaskLike,
+    *,
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
     opt_hash: int,
     popsize: PopSize = shade_popsize,
     bounded: tuple[float, float] | None = (None, None),
@@ -561,11 +569,17 @@ def shade_update(
 
     Parameters
     ----------
-    task : TaskLike
-        Task providing the model and loss function.
+    model : PyTree
+        Model whose inexact-array leaves are optimized; the rest is
+        recombined as static structure.
+    loss_fn : LossFunction
+        ``loss_fn(model, **sample)`` -- or ``loss_fn(model, key=key,
+        **sample)`` when ``pass_rng`` -- returning a scalar loss.
+    pass_rng : bool
+        Whether ``loss_fn`` takes a ``key`` keyword (a stochastic loss).
     opt_hash : int
         Stable hash stamped into ``OptHistory.update_step``.
-    popsize : int or Callable[[TaskLike], int], optional
+    popsize : int or Callable[[int], int], optional
         Population size; defaults to :func:`shade_popsize`
         (``max(10, 4 + 3 * log(d))`` so ``p in [2 / NP, 0.2]`` is
         well-defined).
@@ -597,8 +611,8 @@ def shade_update(
         If ``use_turning`` is enabled without finite bounds or without
         a finite ``max_fevals``.
     """
-    popsize = resolve_popsize(popsize, task)
-    params, static = eqx.partition(task.model, eqx.is_inexact_array)
+    popsize = resolve_popsize(popsize, model)
+    params, static = eqx.partition(model, eqx.is_inexact_array)
 
     optimizer = SHADE(
         population_size=popsize,
@@ -636,12 +650,12 @@ def shade_update(
     init_fn, step_fn = evosax_population_based_fn(
         static=static,
         optimizer=optimizer,
-        loss_fn=task.loss_fn,
+        loss_fn=loss_fn,
         bounded=bounded,
         popsize=popsize,
         es_params=es_params,
         opt_hash=opt_hash,
-        pass_rng=task.pass_rng,
+        pass_rng=pass_rng,
     )
 
     # SHADE keeps its population, external archive and success-history

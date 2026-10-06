@@ -26,9 +26,9 @@ The run loop is a set of [`UpdateClass`](#l2co_optimizers.UpdateClass) methods (
 
 ::: l2co_optimizers.HistoryState
 
-### Building a run from a task
+### Run state
 
-`RunState` bundles one optimizer's population, running best, optimizer state and `UpdateClass`. `RunState.init` resolves an `OptimizationStep` through the registry against a `RunnableTaskLike`; `reset` samples a fresh population, and `run` / `batch_run` / `batch_evaluate` hand the state to the methods above. l2co's `RolloutWrapper` bundles them with a task.
+`RunState` bundles one optimizer's population, running best, optimizer state and `UpdateClass`. `RunState.init` builds it from an already-built `UpdateClass`, a `model`, a `dataset` and a `batch_size`; `reset` samples a fresh population, and `run` / `batch_run` / `batch_evaluate` hand the state to the methods above. Resolving an `OptimizationStep` against a task is l2co's `init_run_state`.
 
 ::: l2co_optimizers.RunState
 
@@ -51,10 +51,6 @@ The run loop is a set of [`UpdateClass`](#l2co_optimizers.UpdateClass) methods (
 ::: l2co_optimizers.register_schedule_namer
 
 ## Contract types
-
-::: l2co_optimizers.TaskLike
-
-::: l2co_optimizers.RunnableTaskLike
 
 ::: l2co_optimizers.OptHistory
 

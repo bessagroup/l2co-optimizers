@@ -65,9 +65,11 @@ def register_optimizer(name: str, factory: Callable[..., UpdateClass]) -> None:
         the same way through every call path. Re-registering an existing
         name overwrites the previous factory.
     factory : Callable[..., UpdateClass]
-        Factory callable that returns an ``UpdateClass``. It must accept the
-        same keyword contract that ``RunState.init`` calls it with:
-        ``**hyperparameters, task, opt_hash, bounded, stop_fn``.
+        Factory callable that returns an ``UpdateClass``. It must accept
+        the bare-factory keyword contract: ``model``, ``loss_fn``,
+        ``pass_rng``, ``opt_hash``, ``bounded``, ``stop_fn`` and
+        ``**hyperparameters``. Meta-optimizers, which need a full task,
+        register with ``l2co.register_optimizer`` instead.
     """
     optimizers[normalize_key(name)] = factory
 

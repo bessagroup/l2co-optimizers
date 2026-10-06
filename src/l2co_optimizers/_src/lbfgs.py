@@ -26,7 +26,7 @@ keyed on the task:
 * :func:`lbfgs_per_eval_key` — ``optax.lbfgs`` chained with that
   linesearch.
 * :func:`lbfgs_update` — the registry factory behind
-  ``optimizer="lbfgs"``. On stochastic tasks (``task.pass_rng`` true)
+  ``optimizer="lbfgs"``. On stochastic tasks (``pass_rng`` true)
   it wires :func:`lbfgs_per_eval_key`; on deterministic tasks fresh
   keys are a mathematical no-op, so it uses the stock ``optax.lbfgs``
   wiring of ``optax_update_extra_kwargs`` (no key is ever
@@ -84,7 +84,6 @@ from l2co_optimizers._src.typing import (
     LossFunction,
     StepFunction,
     StopFunction,
-    TaskLike,
 )
 from l2co_optimizers._src.update_class import UpdateClass
 
@@ -308,7 +307,7 @@ def optax_per_eval_key_fn(
     taken at the first step or after a non-finite cached value).
 
     Only meaningful for stochastic losses; the caller must guarantee
-    ``loss_fn`` accepts a ``key`` keyword argument (``task.pass_rng``
+    ``loss_fn`` accepts a ``key`` keyword argument (``pass_rng``
     true).
 
     Parameters
@@ -395,7 +394,10 @@ def optax_per_eval_key_fn(
 
 
 def lbfgs_update(
-    task: TaskLike,
+    *,
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
     opt_hash: int,
     popsize: int = 1,
     bounded: tuple[float | None, float | None] | None = (None, None),
@@ -404,7 +406,7 @@ def lbfgs_update(
 ) -> UpdateClass:
     """Construct the ``UpdateClass`` behind ``optimizer="lbfgs"``.
 
-    On stochastic tasks (``task.pass_rng`` true) the optimizer is
+    On stochastic tasks (``pass_rng`` true) the optimizer is
     :func:`lbfgs_per_eval_key`, driven by
     :func:`optax_per_eval_key_fn` so every linesearch evaluation
     draws an independent noise realization. On deterministic tasks
@@ -417,8 +419,14 @@ def lbfgs_update(
 
     Parameters
     ----------
-    task : TaskLike
-        Task providing the model and loss function.
+    model : PyTree
+        Model whose inexact-array leaves are optimized; the rest is
+        recombined as static structure.
+    loss_fn : LossFunction
+        ``loss_fn(model, **sample)`` -- or ``loss_fn(model, key=key,
+        **sample)`` when ``pass_rng`` -- returning a scalar loss.
+    pass_rng : bool
+        Whether ``loss_fn`` takes a ``key`` keyword (a stochastic loss).
     opt_hash : int
         Stable hash stamped into ``OptHistory.update_step``.
     popsize : int, optional
@@ -452,7 +460,7 @@ def lbfgs_update(
         + 1
     )
 
-    if not task.pass_rng:
+    if not pass_rng:
         # ``name`` is load-bearing, not decorative: it is what resolves
         # the ``"lbfgs"`` entry in ``TRANSFER_OVERRIDES``. Omitting it
         # falls back to the ``gradient`` family default, whose reader
@@ -461,7 +469,9 @@ def lbfgs_update(
         # scale at all on every deterministic task, which is most of
         # them.
         return optax_update_extra_kwargs(
-            task=task,
+            model=model,
+            loss_fn=loss_fn,
+            pass_rng=pass_rng,
             optimizer=stock_lbfgs,
             opt_hash=opt_hash,
             popsize=popsize,
@@ -472,12 +482,12 @@ def lbfgs_update(
             **hyperparameters,
         )
 
-    _, static = eqx.partition(task.model, eqx.is_inexact_array)
+    _, static = eqx.partition(model, eqx.is_inexact_array)
 
     init_fn, step_fn = optax_per_eval_key_fn(
         static=static,
         optimizer=lbfgs_per_eval_key(**hyperparameters),
-        loss_fn=task.loss_fn,
+        loss_fn=loss_fn,
         bounded=bounded,
         opt_hash=opt_hash,
     )

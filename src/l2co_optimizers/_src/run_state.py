@@ -3,8 +3,9 @@ Per-optimizer run state, and the rollout entry points built on it.
 
 :class:`RunState` bundles one optimizer's population, running best,
 optimizer state and :class:`UpdateClass`. :meth:`RunState.init` builds
-it from an :class:`OptimizationStep` and a :class:`RunnableTaskLike`;
-:func:`reset`, :func:`run`, :func:`batch_run` and
+it from an already-resolved :class:`UpdateClass`, a model and a dataset;
+resolving an :class:`OptimizationStep` against a task is l2co's job
+(``l2co.init_run_state``). :func:`reset`, :func:`run`, :func:`batch_run` and
 :func:`batch_evaluate` hand the state to the ``UpdateClass`` run loop
 and rewrap what it returns. Moved here from l2co (ADR 0017 there).
 """
@@ -27,12 +28,9 @@ from jaxtyping import Array, Float, PRNGKeyArray, PyTree
 # Local
 from l2co_optimizers._src.batching import BatchState
 from l2co_optimizers._src.history_state import HistoryState
-from l2co_optimizers._src.mapping import optimizer_mapping
 from l2co_optimizers._src.model_evaluation import evaluate
-from l2co_optimizers._src.optimizer_schedule import OptimizationStep
 from l2co_optimizers._src.typing import (
     InputParameters,
-    RunnableTaskLike,
     SamplerFunction,
 )
 from l2co_optimizers._src.update_class import UpdateClass
@@ -82,23 +80,29 @@ class RunState(eqx.Module):
     @classmethod
     def init(
         cls,
-        optimizer: OptimizationStep,
-        task: RunnableTaskLike,
-        bounded: tuple[float, float],
+        update_class: UpdateClass,
+        *,
+        model: PyTree,
+        dataset: dict[str, Array],
+        batch_size: int | None,
         key: PRNGKeyArray,
     ) -> RunState:
         """Initialize a new RunState.
 
         Parameters
         ----------
-        optimizer : OptimizationStep
-            Optimizer configuration.
-        task : RunnableTaskLike
-            Task to optimize; ``l2co_tasks.Task`` qualifies. Handed on to
-            the optimizer factory, so a meta-optimizer factory may
-            require a full ``Task``.
-        bounded : tuple[float, float]
-            Bounds for parameter values (lower, upper).
+        update_class : UpdateClass
+            The optimizer to run, already built by its factory (bounds,
+            stopping and hyperparameters are baked in there).
+        model : PyTree
+            Model whose inexact-array leaves are optimized; they seed
+            every population member and ``best_params``.
+        dataset : dict[str, Array]
+            The dataset the loss is evaluated on (empty for a
+            data-free problem).
+        batch_size : int or None
+            Mini-batch size drawn from ``dataset`` per evaluation;
+            ``None`` for the full batch.
         key : PRNGKeyArray
             PRNG key for random operations.
 
@@ -107,21 +111,12 @@ class RunState(eqx.Module):
         RunState
             Initialized run state.
         """
-        dataset = task.loaded_dataset
-        model_params = eqx.filter(task.model, eqx.is_inexact_array)
-
-        update_class: UpdateClass = optimizer_mapping(optimizer.optimizer)(
-            **optimizer.hyperparameters,
-            task=task,
-            opt_hash=optimizer.hash,
-            bounded=bounded,
-            stop_fn=optimizer.stopping_fn,
-        )
+        model_params = eqx.filter(model, eqx.is_inexact_array)
 
         # Initialize batch state
         batch_state = BatchState.init(
             dataset=dataset,
-            batch_size=task.batch_size,
+            batch_size=batch_size,
             key=key,
         )
 
@@ -168,7 +163,7 @@ def reset(
     batch_state : BatchState
         Current batch state.
     static : PyTree
-        Model of the task to optimize.
+        Static (non-inexact-array) partition of the model.
     dataset : dict[str, jax.Array]
         Dataset for evaluation.
     loss_fn : Callable
@@ -372,7 +367,7 @@ def batch_evaluate(
     batch_state : BatchState
         Current batch state.
     static : PyTree
-        Model of the task to optimize.
+        Static (non-inexact-array) partition of the model.
     dataset : dict[str, jax.Array]
         Dataset for evaluation.
     loss_fn : Callable

@@ -20,12 +20,12 @@ from l2co_optimizers import (
     optstep_to_subopt,
 )
 
-from .toy_tasks import rastrigin_task
+from .toy_problems import rastrigin_problem
 
 
 @pytest.fixture(scope="module")
-def task():
-    return rastrigin_task(6)
+def problem():
+    return rastrigin_problem(6)
 
 
 class TestTable:
@@ -94,21 +94,25 @@ class TestResolution:
 class TestSubOptPropagation:
     """The wrappers read the policy off ``SubOpt``, not off the name."""
 
-    def test_optstep_to_subopt_carries_the_policy(self, task):
-        lbfgs = optstep_to_subopt(OptimizationStep(optimizer="lbfgs"), task)
+    def test_optstep_to_subopt_carries_the_policy(self, problem):
+        lbfgs = optstep_to_subopt(
+            OptimizationStep(optimizer="lbfgs"), **problem
+        )
         assert lbfgs.opt_state_handshake == "reset"
 
-        cmaes = optstep_to_subopt(OptimizationStep(optimizer="sepcmaes"), task)
+        cmaes = optstep_to_subopt(
+            OptimizationStep(optimizer="sepcmaes"), **problem
+        )
         assert cmaes.opt_state_handshake == "continue"
 
-    def test_untabulated_subopt_defaults_to_continue(self, task):
-        snes = optstep_to_subopt(OptimizationStep(optimizer="snes"), task)
+    def test_untabulated_subopt_defaults_to_continue(self, problem):
+        snes = optstep_to_subopt(OptimizationStep(optimizer="snes"), **problem)
         assert snes.opt_state_handshake == "continue"
 
-    def test_field_is_static(self, task):
+    def test_field_is_static(self, problem):
         # Must contribute no array leaves: the wrappers branch on it at
         # Python trace time.
         import jax
 
-        sub = optstep_to_subopt(OptimizationStep(optimizer="lbfgs"), task)
+        sub = optstep_to_subopt(OptimizationStep(optimizer="lbfgs"), **problem)
         assert jax.tree.leaves(sub) == []
