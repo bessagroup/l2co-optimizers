@@ -1,8 +1,6 @@
-![Bessa Research Group](img/bessa_group_logo.png)
-
 # L2CO Optimizers
 
-| [**GitHub**](https://github.com/bessagroup/l2co-optimizers)
+[**GitHub**](https://github.com/bessagroup/l2co-optimizers)
 
 Bare optimizers compatible with the L2CO library
 
@@ -58,8 +56,10 @@ Build an optimizer from the registry and step it. A factory takes the problem as
 import jax.numpy as jnp, jax.random as jr
 from l2co_optimizers import optimizer_mapping
 
+
 def sphere(x, **sample):
     return jnp.sum((x - 0.5) ** 2)
+
 
 model = jnp.zeros(4)
 cmaes = optimizer_mapping("cmaes")(
@@ -67,7 +67,9 @@ cmaes = optimizer_mapping("cmaes")(
 )
 params = jnp.repeat(model[None], cmaes.popsize, axis=0)
 state = cmaes.init_fn(params, jr.key(0))
-(params, state, key), history = cmaes.step_fn((params, state, jr.key(0)), sample={})
+(params, state, key), history = cmaes.step_fn(
+    (params, state, jr.key(0)), sample={}
+)
 ```
 
 To run an optimizer on an `l2co_tasks.Task` over a full budget, with batching, realizations and the history reduction, use l2co's `init_run_state` and `batch_evaluate` (or its `RolloutWrapper`): l2co is where a task meets an optimizer. To add your own optimizer, see [Register your own optimizer](./docs/register_optimizer.ipynb).
