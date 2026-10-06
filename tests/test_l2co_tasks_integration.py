@@ -43,6 +43,38 @@ def task(request):
 
 def test_task_is_tasklike(task):
     assert isinstance(task, lo.TaskLike)
+    assert isinstance(task, lo.RunnableTaskLike)
+
+
+def test_run_state_batch_evaluates_a_real_task(task):
+    """The rollout path l2co's ``RolloutWrapper`` drives, minus l2co."""
+    import equinox as eqx
+    import jax.random as jr
+
+    step = lo.OptimizationStep(
+        optimizer="adam", hyperparameters={"learning_rate": 0.05}
+    )
+    run_state = lo.RunState.init(
+        optimizer=step, task=task, bounded=(None, None), key=jr.key(0)
+    )
+    batch_state = lo.BatchState.init(
+        dataset=task.loaded_dataset, batch_size=task.batch_size, key=jr.key(0)
+    )
+    run_state, _, history = lo.batch_evaluate(
+        run_state=run_state,
+        batch_state=batch_state,
+        static=eqx.filter(task.model, eqx.is_inexact_array, inverse=True),
+        dataset=task.loaded_dataset,
+        loss_fn=task.loss_fn,
+        sampler=lo.normal_sampling,
+        n_iterations=3,
+        pass_rng=task.pass_rng,
+        key=jr.split(jr.key(1), 2),
+        verbose=False,
+    )
+    assert run_state.best_loss.shape == (2,)
+    assert jnp.isfinite(run_state.best_loss).all()
+    assert history.output_min.shape == (2, 3)
 
 
 def test_count_parameters_matches_task_dimensionality(task):

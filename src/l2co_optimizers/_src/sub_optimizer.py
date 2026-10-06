@@ -538,7 +538,7 @@ def resolve_popsize(opt_step: OptimizationStep, task: TaskLike) -> int:
     purely to read its ``popsize`` attribute — ``1`` for optax-style
     optimizers, an explicit value or ``int(4 + 3 * log(d))`` for
     evosax — so the wrapper's population sizing matches the call site
-    in ``l2co._src.run_state.RunState.init``. The ``UpdateClass``
+    in :meth:`~l2co_optimizers.RunState.init`. The ``UpdateClass``
     instance itself is discarded; the wrapper builds its own
     optax/evosax adapter against the same hyperparameters and the
     correctly-resolved popsize.

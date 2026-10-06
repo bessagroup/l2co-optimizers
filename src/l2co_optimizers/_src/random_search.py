@@ -451,8 +451,8 @@ def random_search_update(
     Returns
     -------
     UpdateClass
-        A :class:`RandomSearchUpdateClass` ready to slot into
-        l2co's ``RunState``.
+        A :class:`RandomSearchUpdateClass` ready to slot into a
+        :class:`~l2co_optimizers.RunState`.
     """
     del stop_fn  # accepted but unused; see docstring
     popsize = resolve_popsize(popsize, task)

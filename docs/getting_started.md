@@ -32,7 +32,7 @@ state = cmaes.init_fn(params, jr.key(0))
 (params, state, key), history = cmaes.step_fn((params, state, jr.key(0)), sample={})
 ```
 
-To run an optimizer on an `l2co_tasks.Task` over a full budget, with batching, realizations and the history reduction, use `l2co.RunState` / `l2co.RolloutWrapper`. To add your own optimizer, see [Register your own optimizer](register_optimizer.ipynb).
+To run an optimizer on an `l2co_tasks.Task` over a full budget, with batching, realizations and the history reduction, use `RunState.init` and `batch_evaluate` (or l2co's `RolloutWrapper`, which bundles them with a task). To add your own optimizer, see [Register your own optimizer](register_optimizer.ipynb).
 
 ## Hydra optimizer configurations
 

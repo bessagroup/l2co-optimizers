@@ -18,16 +18,17 @@ It was extracted from `l2co` (`bessagroup/L2CO@f677d8c`); see l2co ADR 0016. JAX
 ```
 l2co-tasks        l2co-optimizers        (neither imports the other)
         \            /
-            l2co               <- the bridge: RunState, RolloutWrapper, exports
+            l2co               <- the bridge: RolloutWrapper, exports, meta-optimizers
           /       \
      rl2co     agentic-l2co
 ```
 
 - **Never import `l2co` or `l2co_tasks` from `src/`.** A ruff `TID251` banned-api rule fails the lint, and `tests/test_optimizers_facade.py` asserts it in a fresh interpreter.
-- **Tasks arrive only as `TaskLike`** (`model`, `loss_fn`, `pass_rng`; `_src/typing.py`). Derive the dimensionality with `count_parameters(task.model)`.
+- **Tasks arrive only as `TaskLike`** (`model`, `loss_fn`, `pass_rng`; `_src/typing.py`), or as `RunnableTaskLike` (adds `loaded_dataset`, `batch_size`) where `RunState.init` builds a run. Factories take `TaskLike` only. Derive the dimensionality with `count_parameters(task.model)`.
 - **The run loop lives here, as `UpdateClass` methods** (l2co ADR 0017): `init_state`, `step` / `batch_step`, `run`, `batch_run` (routes on `sequential_realizations`), `batch_run_fused`, `batch_run_sequential`. So do the states it threads: `BatchState`, the `HistoryState` buffer and `Carry`. The loop takes a plain `dict[str, Array]` dataset, never a task.
   - `RandomSearchUpdateClass` overrides `run` (chunked) and `batch_run` (always sequential, for peak memory).
-  - **What stays in l2co:** building a run from a `Task` (`RunState`, `RolloutWrapper`), `HistoryState`'s exports (`l2co.history_to_xarray` / `history_to_xarray_realizations` / `history_to_dataloader`, which need xarray and the ERT), and every meta-optimizer (`strategy_wrapper`, `meta_optimizer`, models).
+  - **`RunState`** (`_src/run_state.py`) is here too, with `reset` / `batch_reset` / `run` / `batch_run` / `batch_evaluate` and `evaluate` (`_src/model_evaluation.py`): `RunState.init` resolves an `OptimizationStep` through the registry, and the rest rewraps the `UpdateClass` loop. l2co re-exports them.
+  - **What stays in l2co:** `RolloutWrapper`, `HistoryState`'s exports (`l2co.history_to_xarray` / `history_to_xarray_realizations` / `history_to_dataloader`, which need xarray and the ERT), and every meta-optimizer (`strategy_wrapper`, `meta_optimizer`, models).
 
 ## Commands
 

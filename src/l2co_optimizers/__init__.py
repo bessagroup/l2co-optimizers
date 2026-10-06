@@ -8,14 +8,17 @@ state that loop threads (:class:`BatchState`, :class:`HistoryState`) --
 the :class:`OptimizationStep` spec the Hydra configs instantiate, the
 optimizer contract types, the per-library registries, and the
 strategy-facing layer (``SubOpt``, handshake policy, state transfer, menu
-evaluation) that meta-optimizers dispatch through. Meta-optimization
-strategies themselves, and the bridge that builds a run from a task,
-live in ``l2co`` (l2co ADR 0017). The layout of this namespace is documented in
+evaluation) that meta-optimizers dispatch through, and :class:`RunState`
+with its ``reset`` / ``run`` / ``batch_evaluate`` entry points, which
+build a run from a task. Meta-optimization strategies themselves, and
+``HistoryState``'s xarray/``DataLoader`` exports, live in ``l2co``
+(l2co ADR 0017). The layout of this namespace is documented in
 ``docs/api.md``.
 
-Tasks reach this package only through :class:`TaskLike`, a structural
-protocol that ``l2co_tasks.Task`` satisfies; neither package imports the
-other.
+Tasks reach this package only through :class:`TaskLike` (and the wider
+:class:`RunnableTaskLike` that :meth:`RunState.init` takes), structural
+protocols that ``l2co_tasks.Task`` satisfies; neither package imports
+the other.
 """
 
 #                                                                       Modules
@@ -65,6 +68,7 @@ from l2co_optimizers._src.menu_eval import (
     GRAD_EVALUATION_WIDTH,
     menu_loss_and_grad,
 )
+from l2co_optimizers._src.model_evaluation import evaluate
 from l2co_optimizers._src.opt_history import (
     OptHistory,
     RecentHistory,
@@ -93,6 +97,14 @@ from l2co_optimizers._src.random_search import (
     random_search_update,
 )
 from l2co_optimizers._src.rbf_trust_region import rbf_trust_region_mapping
+from l2co_optimizers._src.run_state import (
+    RunState,
+    batch_evaluate,
+    batch_reset,
+    batch_run,
+    reset,
+    run,
+)
 from l2co_optimizers._src.sampler import (
     constant_sampling,
     get_sampler,
@@ -145,6 +157,7 @@ from l2co_optimizers._src.typing import (
     OptHistoryType,
     OptState,
     PopSize,
+    RunnableTaskLike,
     SamplerFunction,
     StepFunction,
     StopFunction,
@@ -166,13 +179,10 @@ __status__ = "Stable"
 
 __all__ = [
     "ALIAS_HYPERPARAMETER",
-    "AskFunction",
-    "BatchState",
     "CONF_ABSENT",
     "CONF_ESTIMATED",
     "CONF_EXACT",
     "CONSTRUCTOR_HYPERPARAMETERS",
-    "Carry",
     "DEFAULT_HANDSHAKE_POLICY",
     "FAMILIES",
     "FAMILY_DISTRIBUTION",
@@ -180,40 +190,49 @@ __all__ = [
     "FAMILY_POPULATION",
     "GRAD_EVALUATION_WIDTH",
     "HANDSHAKE_POLICY",
+    "LINESEARCH_FEVAL_BOUND",
+    "OPT_STATE_VARIANTS",
+    "POPULATION_HANDSHAKES",
+    "POPULATION_VARIANTS",
+    "SHADE",
+    "STOPPING_CRITERIA",
+    "TRANSFER_OVERRIDES",
+    "AskFunction",
+    "BatchState",
+    "Carry",
     "HandshakePolicy",
     "HistoryState",
     "InitFunction",
     "InputParameters",
-    "LINESEARCH_FEVAL_BOUND",
     "LossFunction",
-    "OPT_STATE_VARIANTS",
     "OptHistory",
     "OptHistoryType",
     "OptState",
     "OptimizationStep",
-    "POPULATION_HANDSHAKES",
-    "POPULATION_VARIANTS",
     "PopSize",
     "RandomSearchUpdateClass",
     "RecentHistory",
     "RunResult",
-    "SHADE",
-    "STOPPING_CRITERIA",
+    "RunState",
+    "RunnableTaskLike",
     "SamplerFunction",
     "StepFunction",
     "StopFunction",
     "SubOpt",
-    "TRANSFER_OVERRIDES",
     "TaskLike",
     "TransferBundle",
     "TransferReadFunction",
     "TransferSpec",
     "TransferWriteFunction",
     "UpdateClass",
+    "batch_evaluate",
+    "batch_reset",
+    "batch_run",
     "build_transfer_fns",
     "constant_sampling",
     "count_parameters",
     "create_schedules_experimentdata",
+    "evaluate",
     "evosax_distribution_update",
     "evosax_mapping",
     "evosax_population_update",
@@ -247,7 +266,9 @@ __all__ = [
     "rbf_trust_region_mapping",
     "register_optimizer",
     "register_schedule_namer",
+    "reset",
     "resolve_popsize",
+    "run",
     "scale_by_zoom_linesearch_per_eval_key",
     "shade_mapping",
     "shade_popsize",

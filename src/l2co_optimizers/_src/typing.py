@@ -3,7 +3,9 @@ Type aliases and protocols forming the optimizer contract.
 
 These are the types an optimizer author implements against: what a
 step consumes and returns, what a stopping check sees, and
-:class:`TaskLike`, the only view of a task this package takes.
+:class:`TaskLike`, the view of a task an optimizer factory takes, and
+:class:`RunnableTaskLike`, the slightly wider one
+:meth:`RunState.init` builds a run from.
 """
 
 #                                                                       Modules
@@ -139,6 +141,28 @@ class TaskLike(Protocol):
     model: PyTree
     loss_fn: Callable
     pass_rng: bool
+
+
+@runtime_checkable
+class RunnableTaskLike(TaskLike, Protocol):
+    """The view of a task :meth:`RunState.init` builds a run from.
+
+    :class:`TaskLike` plus the data a run batches over. Kept apart from
+    :class:`TaskLike` so optimizer factories keep requiring only what
+    they read. ``l2co_tasks.Task`` satisfies it structurally.
+
+    Attributes
+    ----------
+    loaded_dataset : dict[str, Array]
+        The dataset the loss is evaluated on, as a plain dict of arrays
+        sharing a leading sample axis (empty for a data-free task).
+    batch_size : int or None
+        Mini-batch size drawn from ``loaded_dataset`` per evaluation;
+        ``None`` for the full batch.
+    """
+
+    loaded_dataset: dict[str, Array]
+    batch_size: int | None
 
 
 #: Population size: a literal ``int`` or a callable deriving one from the

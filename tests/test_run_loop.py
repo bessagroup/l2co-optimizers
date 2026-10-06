@@ -69,7 +69,7 @@ def _build(name, hyperparameters, stop_fn=None, opt_hash=7):
 
 
 def _batch_inputs(update_class: UpdateClass, key):
-    """Realization-axis inputs, as l2co's ``batch_evaluate`` builds them."""
+    """Realization-axis inputs, as :func:`batch_evaluate` builds them."""
     init_key, params_key = jr.split(key)
     keys = jr.split(init_key, N_REALIZATIONS)
     batch_state = BatchState.init(dataset={}, batch_size=None, key=key)

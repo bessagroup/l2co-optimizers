@@ -14,7 +14,7 @@ is :meth:`UpdateClass.run` (``tests/test_run_loop.py``).
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import equinox as eqx
 import jax
@@ -24,12 +24,18 @@ import jax.random as jr
 
 @dataclass(frozen=True)
 class ToyTask:
-    """Smallest object satisfying :class:`l2co_optimizers.TaskLike`."""
+    """Smallest object satisfying :class:`l2co_optimizers.TaskLike`.
+
+    Also satisfies :class:`l2co_optimizers.RunnableTaskLike`: the toy
+    objectives are data-free, so the dataset is empty and full-batch.
+    """
 
     model: jax.Array
     loss_fn: Callable
     pass_rng: bool = False
     global_min: float | None = None  # unused by optimizers; kept for parity
+    loaded_dataset: dict[str, jax.Array] = field(default_factory=dict)
+    batch_size: int | None = None
 
 
 def _sphere(x, **_):
