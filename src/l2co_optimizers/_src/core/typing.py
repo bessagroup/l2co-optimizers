@@ -1,32 +1,34 @@
 """
-Type aliases and protocols forming the optimizer contract.
+Type aliases forming the optimizer contract.
 
 These are the types an optimizer author implements against: what a
-step consumes and returns, what a stopping check sees, and
-:class:`TaskLike`, the only view of a task this package takes.
+step consumes and returns, what a stopping check sees, and the loss a
+factory is handed. There is no task type: a factory takes ``model``,
+``loss_fn`` and ``pass_rng`` as separate keywords, and the bridge
+from a task to those lives in ``l2co``.
 """
 
 #                                                                       Modules
 # =============================================================================
 
+# Standard
 from __future__ import annotations
 
 from abc import abstractmethod
-
-# Standard
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
-
-import equinox as eqx
+from typing import TYPE_CHECKING
 
 # Third-party
+import equinox as eqx
 from evosax.algorithms.base import State as EvoSaxState
 from jaxtyping import Array, Bool, Float, Int, PRNGKeyArray, PyTree
 from optax import OptState as OptaxOptState
 
+# Local
 if TYPE_CHECKING:
-    from l2co_optimizers._src.opt_history import RecentHistory
-    from l2co_optimizers._src.state_transfer import TransferBundle
+    from l2co_optimizers._src.core.batching import BatchState
+    from l2co_optimizers._src.core.opt_history import RecentHistory
+    from l2co_optimizers._src.core.state_transfer import TransferBundle
 
 #                                                          Authorship & Credits
 # =============================================================================
@@ -107,41 +109,26 @@ TransferReadFunction = Callable[
 TransferWriteFunction = Callable[["TransferBundle", OptState], OptState]
 
 #: ``loss_fn(model, **sample) -> loss`` for one (unbatched) model, or
-#: ``loss_fn(model, key=key, **sample)`` when ``task.pass_rng``. Scalar
+#: ``loss_fn(model, key=key, **sample)`` when ``pass_rng``. Scalar
 #: output; the ``vmapped_loss*`` helpers add the population axis.
 #: ``Callable[...]`` because the batch arrives as keyword arguments.
 LossFunction = Callable[..., Float[Array, ""]]
 
 
-@runtime_checkable
-class TaskLike(Protocol):
-    """The view of a task an optimizer factory takes.
-
-    Structural: any object with these three attributes qualifies, so
-    ``l2co_tasks.Task`` satisfies it without either package importing
-    the other. Meta-optimizer factories registered into the same
-    registry may require more (a full ``Task``); the bare optimizers
-    read only these.
-
-    Attributes
-    ----------
-    model : PyTree
-        Model whose inexact-array leaves are optimized; the rest is
-        recombined as static structure.
-    loss_fn : Callable
-        ``loss_fn(model, **sample)`` -- or ``loss_fn(model, key=key,
-        **sample)`` when :attr:`pass_rng` -- returning a scalar loss.
-    pass_rng : bool
-        Whether ``loss_fn`` takes a ``key`` keyword (a stochastic loss).
-    """
-
-    model: PyTree
-    loss_fn: Callable
-    pass_rng: bool
-
-
 #: Population size: a literal ``int`` or a callable deriving one from the
-#: task (see :mod:`l2co_optimizers._src.popsize`).
-PopSize = int | Callable[[TaskLike], int]
+#: problem dimensionality (see :mod:`l2co_optimizers._src.core.popsize`).
+PopSize = int | Callable[[int], int]
 
 SamplerFunction = Callable[[PRNGKeyArray, PyTree, int], InputParameters]
+
+#: The scan carry of :meth:`UpdateClass.run`: ``(params, opt_state, key,
+#: batch_state, done, recent_history)``. The first three are what
+#: ``step_fn`` sees; the rest is the loop's own bookkeeping.
+Carry = tuple[
+    InputParameters,
+    OptState,
+    PRNGKeyArray,
+    "BatchState",
+    Bool[Array, ""],
+    "RecentHistory",
+]

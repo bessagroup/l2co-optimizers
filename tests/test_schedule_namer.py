@@ -5,10 +5,22 @@
 packages register theirs next to ``register_optimizer``.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Third-party
 import pytest
 
+# Local
 from l2co_optimizers import OptimizationStep, register_schedule_namer
-from l2co_optimizers._src import optimizer_schedule
+from l2co_optimizers._src.core import optimizer_schedule
+
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
+# =============================================================================
 
 
 @pytest.fixture

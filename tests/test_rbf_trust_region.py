@@ -20,18 +20,31 @@ the trust region actually adapts
     search around the incumbent.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Standard
 from __future__ import annotations
 
+# Third-party
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import pytest
 
+# Local
 from l2co_optimizers._src.rbf_trust_region import (
     Params,
     RBFTrustRegion,
     _mean_sq_dist,
 )
+
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
+# =============================================================================
 
 #                                                                      Fixtures
 # =============================================================================
@@ -198,14 +211,14 @@ def test_the_registry_resolves_every_spelling_of_the_name() -> None:
     """Both lookup paths must agree on how a name is keyed.
 
     ``RunState.init`` resolves the raw name a config wrote;
-    ``sub_optimizer.resolve_popsize`` resolves one already put through
+    ``optimizer_parts.resolve_popsize`` resolves one already put through
     ``normalize_key``, which strips underscores. Storing the key raw made
     this optimizer usable directly but not as a meta-optimizer sub-step,
     and that failed at run time -- 768 cells into a campaign -- rather
     than at registration.
     """
+    from l2co_optimizers._src.core.utils import normalize_key
     from l2co_optimizers._src.mapping import optimizer_mapping
-    from l2co_optimizers._src.utils import normalize_key
 
     for spelling in ("rbf_trust_region", "rbftrustregion", "RBF_Trust_Region"):
         assert optimizer_mapping(spelling) is optimizer_mapping(
@@ -215,8 +228,8 @@ def test_the_registry_resolves_every_spelling_of_the_name() -> None:
 
 def test_every_registry_key_is_already_normalized() -> None:
     """A raw key would be unreachable from the normalizing call path."""
+    from l2co_optimizers._src.core.utils import normalize_key
     from l2co_optimizers._src.mapping import optimizers
-    from l2co_optimizers._src.utils import normalize_key
 
     unreachable = [k for k in optimizers if normalize_key(k) != k]
     assert not unreachable, (

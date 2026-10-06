@@ -1,8 +1,8 @@
-![Bessa Research Group](img/bessa_group_logo.png)
-
 # L2CO Optimizers
 
 | [**GitHub**](https://github.com/bessagroup/l2co-optimizers)
+| [**PyPI**](https://pypi.org/project/l2co-optimizers/)
+| [**Documentation**](https://l2co-optimizers.readthedocs.io/)
 
 Bare optimizers compatible with the L2CO library
 
@@ -16,16 +16,16 @@ Bare optimizers compatible with the L2CO library
 - **the `OptimizationStep` spec** that names an optimizer with its hyperparameters and stopping criteria;
 - **ready-made Hydra optimizer configs**.
 
-It also ships the *strategy-facing* layer meta-optimizers dispatch through: the `SubOpt` adapter, the per-optimizer handshake policy and state transfer, and menu-dispatched loss evaluation. The meta-optimization strategies themselves (`l2co`, `rl2co`, `agentic-l2co`) and the loop that runs an optimizer on a task stay in [`l2co`](https://github.com/bessagroup/l2co).
+It also ships what each optimizer exposes to a loop that switches between optimizers: its state-transfer ports, and `optimizer_parts`, which unpacks it into an optax transform or an `(init, ask, tell)` triple. The switching layer itself (the `SubOpt` adapter, the handshake policy, menu-dispatched loss evaluation), the meta-optimization strategies (`l2co`, `rl2co`, `agentic-l2co`) and the bridge to tasks live in [`l2co`](https://github.com/bessagroup/l2co).
 
 ## Statement of need
 
 Learning-to-optimize and optimizer-selection research needs many optimizers behind one calling convention, so that a selector can switch between them mid-run. `l2co-optimizers` provides that convention without the meta-learning stack:
-- every optimizer is built by `optimizer_mapping(name)(task=..., opt_hash=..., bounded=..., stop_fn=...)`;
+- every optimizer is built by `optimizer_mapping(name)(model=..., loss_fn=..., pass_rng=..., opt_hash=..., bounded=..., stop_fn=...)`;
 - every one steps through the same `(params, opt_state, key)` carry;
 - every one reports into the same `OptHistory`.
 
-It depends on neither `l2co` nor `l2co-tasks`. A task reaches it only through `TaskLike`, a structural protocol (`model`, `loss_fn`, `pass_rng`) that `l2co_tasks.Task` satisfies unchanged. `l2co` is the bridge that runs one on the other.
+It depends on neither `l2co` nor `l2co-tasks`, and has no notion of a task: factories take `model`, `loss_fn` and `pass_rng` as keywords. `l2co` is the bridge that unpacks an `l2co_tasks.Task` into them (l2co ADR 0018).
 
 ## Authorship
 
@@ -52,30 +52,98 @@ cd l2co-optimizers
 uv sync
 ```
 
-Build an optimizer from the registry and step it. Any object with `model`, `loss_fn` and `pass_rng` is a task:
+Build an optimizer from the registry and step it. A factory takes the problem as three keywords -- `model`, `loss_fn` and `pass_rng` -- never as a task object:
 
 ```python
-from dataclasses import dataclass
 import jax.numpy as jnp, jax.random as jr
-from l2co_optimizers import optimizer_mapping, TaskLike
+from l2co_optimizers import optimizer_mapping
 
-@dataclass
-class Sphere:
-    model = jnp.zeros(4)
-    pass_rng = False
-    def loss_fn(self, x, **sample):
-        return jnp.sum((x - 0.5) ** 2)
 
-task = Sphere()
-assert isinstance(task, TaskLike)
+def sphere(x, **sample):
+    return jnp.sum((x - 0.5) ** 2)
 
-cmaes = optimizer_mapping("cmaes")(task=task, opt_hash=1)
-params = jnp.repeat(task.model[None], cmaes.popsize, axis=0)
+
+model = jnp.zeros(4)
+cmaes = optimizer_mapping("cmaes")(
+    model=model, loss_fn=sphere, pass_rng=False, opt_hash=1
+)
+params = jnp.repeat(model[None], cmaes.popsize, axis=0)
 state = cmaes.init_fn(params, jr.key(0))
-(params, state, key), history = cmaes.step_fn((params, state, jr.key(0)), sample={})
+(params, state, key), history = cmaes.step_fn(
+    (params, state, jr.key(0)), sample={}
+)
 ```
 
-To run an optimizer on an `l2co_tasks.Task` over a full budget, with batching, realizations and the history reduction, use `l2co.RunState` / `l2co.RolloutWrapper`. To add your own optimizer, see [Register your own optimizer](./docs/register_optimizer.ipynb).
+To run an optimizer on an `l2co_tasks.Task` over a full budget, with batching, realizations and the history reduction, use l2co's `init_run_state` and `batch_evaluate` (or its `RolloutWrapper`): l2co is where a task meets an optimizer. To add your own optimizer, see [Register your own optimizer](./docs/register_optimizer.ipynb).
+
+## Available optimizers
+
+Every optimizer below is built by name through `optimizer_mapping(name)`. Names are normalized (non-alphanumerics stripped, lowercased), so `"rbf_trust_region"` and `"rbftrustregion"` resolve to the same entry. Meta-optimizers (`l2co`, `rl2co`) are not built in: they register themselves when their package is imported.
+
+| Name | Algorithm | Family | Backend |
+| --- | --- | --- | --- |
+| `adabelief` | AdaBelief | Gradient | optax |
+| `adadelta` | AdaDelta | Gradient | optax |
+| `adafactor` | Adafactor | Gradient | optax |
+| `adagrad` | AdaGrad | Gradient | optax |
+| `adam` | Adam | Gradient | optax |
+| `adamax` | AdaMax | Gradient | optax |
+| `adamaxw` | AdaMax with decoupled weight decay | Gradient | optax |
+| `adamw` | AdamW | Gradient | optax |
+| `adan` | Adan | Gradient | optax |
+| `amsgrad` | AMSGrad | Gradient | optax |
+| `fromage` | Fromage | Gradient | optax |
+| `lamb` | LAMB | Gradient | optax |
+| `lars` | LARS | Gradient | optax |
+| `lion` | Lion | Gradient | optax |
+| `nadam` | NAdam (Adam with Nesterov momentum) | Gradient | optax |
+| `nadamw` | NAdamW (AdamW with Nesterov momentum) | Gradient | optax |
+| `noisysgd` | Noisy SGD | Gradient | optax |
+| `novograd` | NovoGrad | Gradient | optax |
+| `optimisticadam` | Optimistic Adam | Gradient | optax |
+| `optimisticgradientdescent` | Optimistic gradient descent | Gradient | optax |
+| `radam` | RAdam | Gradient | optax |
+| `rmsprop` | RMSProp | Gradient | optax |
+| `rprop` | Rprop | Gradient | optax |
+| `sgd` | SGD | Gradient | optax |
+| `signsgd` | signSGD | Gradient | optax |
+| `sm3` | SM3 | Gradient | optax |
+| `yogi` | Yogi | Gradient | optax |
+| `lbfgs` | L-BFGS, with a fresh PRNG key per linesearch evaluation on stochastic objectives | Quasi-Newton | optax + built-in |
+| `ars` | Augmented Random Search | Distribution-based | evosax |
+| `asebo` | ASEBO | Distribution-based | evosax |
+| `cmaes` | CMA-ES | Distribution-based | evosax |
+| `crfmnes` | CR-FM-NES | Distribution-based | evosax |
+| `des` | Discovered ES | Distribution-based | evosax |
+| `esmc` | ESMC | Distribution-based | evosax |
+| `gradientlessdescent` | Gradientless Descent | Distribution-based | evosax |
+| `guidedes` | Guided ES | Distribution-based | evosax |
+| `hillclimbing` | Hill climbing | Distribution-based | evosax |
+| `iamalgamfull` | iAMaLGaM (full covariance) | Distribution-based | evosax |
+| `iamalgamunivariate` | iAMaLGaM (univariate) | Distribution-based | evosax |
+| `lmmaes` | LM-MA-ES | Distribution-based | evosax |
+| `maes` | MA-ES | Distribution-based | evosax |
+| `noisereusees` | Noise-Reuse ES | Distribution-based | evosax |
+| `openes` | OpenAI-ES | Distribution-based | evosax |
+| `persistentes` | Persistent ES | Distribution-based | evosax |
+| `pgpe` | PGPE | Distribution-based | evosax |
+| `rmes` | Rm-ES | Distribution-based | evosax |
+| `sepcmaes` | Sep-CMA-ES | Distribution-based | evosax |
+| `simplees` | Simple ES | Distribution-based | evosax |
+| `simulatedannealing` | Simulated annealing | Distribution-based | evosax |
+| `snes` | SNES | Distribution-based | evosax |
+| `xnes` | xNES | Distribution-based | evosax |
+| `differentialevolution` | Differential Evolution | Population-based | evosax |
+| `diffusionevolution` | Diffusion Evolution | Population-based | evosax |
+| `gesmrga` | GESMR-GA | Population-based | evosax |
+| `mr15ga` | MR15-GA | Population-based | evosax |
+| `pso` | Particle Swarm Optimization | Population-based | evosax |
+| `samrga` | SAMR-GA | Population-based | evosax |
+| `simplega` | Simple GA | Population-based | evosax |
+| `shade` | SHADE, with optional turning-based mutation (Tanabe & Fukunaga 2013; Sun et al. 2020) | Population-based | built-in (evosax API) |
+| `turbo` | TuRBO trust-region Bayesian optimization (Eriksson et al. 2019) | Model-based | built-in |
+| `rbf_trust_region` | RBF-surrogate trust-region search (ORBIT / DYCORS family) | Model-based | built-in |
+| `randomsearch` | One-shot random search | Random | built-in |
 
 ## Hydra optimizer configurations
 
@@ -120,7 +188,7 @@ This package is part of the L2CO ecosystem developed in the [Bessa Research Grou
 - [l2co](https://github.com/bessagroup/L2CO) — Learning to Choose Optimizers: a meta-learner that selects an optimizer from problem features before any evaluations, then reassesses that choice from the observed optimization trajectory.
 - [rl2co](https://github.com/bessagroup/rl2co) — Reinforcement Learning to Choose Optimizers: a JAX-based RL agent that dynamically switches between optimizers during a run.
 - [l2co-tasks](https://github.com/bessagroup/l2co-tasks) — Optimization task definitions (BBOB, CEC 2005, PDE, spiral, …) compatible with the L2CO library.
-- [l2co-optimizers](https://github.com/bessagroup/l2co-optimizers) — Bare optimizers (registry, `UpdateClass`, `OptimizationStep`, handshake and state transfer) compatible with the L2CO library.
+- [l2co-optimizers](https://github.com/bessagroup/l2co-optimizers) — Bare optimizers (registry, `UpdateClass`, `OptimizationStep`, state transfer) compatible with the L2CO library.
 - [l2co_experiments](https://github.com/bessagroup/l2co_experiments) — Hydra + f3dasm experiment pipelines (dataset creation, training, rollouts, figures) for the L2CO studies.
 - [agentic-l2co](https://github.com/bessagroup/agentic-l2co) — An LLM-agent drop-in replacement for `l2co.L2COModel`, driving two-stage optimizer selection with an Ollama-hosted LLM.
 - [bbob-jax](https://github.com/bessagroup/bbob-jax) — JAX implementations of the BBOB (noiseless and noisy), CEC 2005 and CEC 2017 black-box optimization benchmark functions.

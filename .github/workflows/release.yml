@@ -1,0 +1,36 @@
+name: release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write  # the action pushes the version tag and creates the GitHub release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Release
+        uses: patrick-kidger/action_update_python_project@v8
+        with:
+          python-version: "3.12"
+          # Runs in a fresh temp dir against the built sdist/wheel.
+          # --no-sources drops the `../f3dasm` editable path in
+          # [tool.uv.sources], so f3dasm resolves from PyPI. src/, README.md
+          # and docs/index.md are copied only for the tests that read the
+          # source tree (core layering, README optimizer table); `src` is not
+          # a package, so `import l2co_optimizers` still resolves to the
+          # installed build.
+          test-script: |
+            cp -r ${{ github.workspace }}/tests ./tests
+            cp -r ${{ github.workspace }}/src ./src
+            cp ${{ github.workspace }}/pyproject.toml ./pyproject.toml
+            cp ${{ github.workspace }}/README.md ./README.md
+            mkdir -p docs && cp ${{ github.workspace }}/docs/index.md ./docs/index.md
+            uv sync --extra tests --no-install-project --inexact --no-sources
+            uv run --no-sync pytest
+          pypi-token: ${{ secrets.pypi_token }}
+          github-user: bessagroup
+          github-token: ${{ github.token }}

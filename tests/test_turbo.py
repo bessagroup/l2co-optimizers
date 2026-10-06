@@ -17,15 +17,28 @@ selection is stochastic
     different picks, or the exploration this buys is absent.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Standard
 from __future__ import annotations
 
+# Third-party
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import pytest
 
+# Local
 from l2co_optimizers._src.rbf_trust_region import default_n_candidates
 from l2co_optimizers._src.turbo import Params, TuRBO, _matern52
+
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
+# =============================================================================
 
 #                                                                      Fixtures
 # =============================================================================
@@ -219,7 +232,7 @@ def test_registered_on_both_lookup_paths() -> None:
     standalone and failed as a sub-step, 768 cells into a campaign.
     """
     from l2co_optimizers._src.mapping import optimizer_mapping
-    from l2co_optimizers._src.sub_optimizer import (
+    from l2co_optimizers._src.optimizer_parts import (
         CONSTRUCTOR_HYPERPARAMETERS,
         l2co_native_evosax,
     )

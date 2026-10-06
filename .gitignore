@@ -144,6 +144,7 @@ celerybeat.pid
 .env
 .envrc
 .venv
+.venv-docker/
 env/
 venv/
 ENV/
@@ -213,5 +214,6 @@ site/
 
 # Agents
 agent-reports/
+.claude/worktrees/
 
 .vscode/

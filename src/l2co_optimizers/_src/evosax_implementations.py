@@ -6,12 +6,12 @@ The closure factories ``evosax_distribution_based_fn`` /
 for an EvoSax algorithm, and ``evosax_ask_fn`` exposes its sampling step
 for a handshake. The ``UpdateClass`` factories
 ``evosax_distribution_update`` / ``evosax_population_update`` wrap them
-into an :class:`~l2co_optimizers._src.update_class.UpdateClass`. The
+into an :class:`~l2co_optimizers._src.core.update_class.UpdateClass`. The
 registry binds each EvoSax algorithm directly to the appropriate factory
 via :class:`jax.tree_util.Partial`. Population size defaults to
-:func:`l2co_optimizers._src.popsize.variable_popsize` on each factory,
+:func:`l2co_optimizers._src.core.popsize.variable_popsize` on each factory,
 except for the algorithms in :data:`_EVEN_POPSIZE_REQUIRED`, which are
-bound to :func:`l2co_optimizers._src.popsize.variable_popsize_even`
+bound to :func:`l2co_optimizers._src.core.popsize.variable_popsize_even`
 because they require an even population size. The caller can override
 either default by supplying ``popsize`` in the ``OptimizationStep``
 hyperparameters.
@@ -23,12 +23,11 @@ hyperparameters.
 # Standard
 from __future__ import annotations
 
+# Third-party
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-
-# Third-party
 from evosax.algorithms import algorithms
 from evosax.algorithms.base import Params
 from evosax.algorithms.base import State as EvoSaxState
@@ -41,25 +40,24 @@ from evosax.algorithms.population_based.base import PopulationBasedAlgorithm
 from jax.tree_util import Partial
 from jaxtyping import PRNGKeyArray, PyTree
 
-from l2co_optimizers._src.loss import (
+# Local
+from l2co_optimizers._src.core.loss import (
     vmapped_loss,
     vmapped_loss_with_rng,
 )
-
-# Local
-from l2co_optimizers._src.opt_history import OptHistory
-from l2co_optimizers._src.popsize import (
+from l2co_optimizers._src.core.opt_history import OptHistory
+from l2co_optimizers._src.core.popsize import (
     resolve_popsize,
     variable_popsize,
     variable_popsize_even,
 )
-from l2co_optimizers._src.state_transfer import (
+from l2co_optimizers._src.core.state_transfer import (
     FAMILY_DISTRIBUTION,
     FAMILY_POPULATION,
     build_transfer_fns,
     transfer_spec_for,
 )
-from l2co_optimizers._src.typing import (
+from l2co_optimizers._src.core.typing import (
     AskFunction,
     InitFunction,
     InputParameters,
@@ -67,10 +65,9 @@ from l2co_optimizers._src.typing import (
     PopSize,
     StepFunction,
     StopFunction,
-    TaskLike,
 )
-from l2co_optimizers._src.update_class import UpdateClass
-from l2co_optimizers._src.utils import normalize_key
+from l2co_optimizers._src.core.update_class import UpdateClass
+from l2co_optimizers._src.core.utils import normalize_key
 
 #                                                          Authorship & Credits
 # =============================================================================
@@ -358,7 +355,10 @@ def evosax_population_based_fn(
 
 
 def evosax_distribution_update(
-    task: TaskLike,
+    *,
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
     optimizer: type[DistributionBasedAlgorithm],
     opt_hash: int,
     popsize: PopSize = variable_popsize,
@@ -372,13 +372,19 @@ def evosax_distribution_update(
 
     Parameters
     ----------
-    task : TaskLike
-        Task providing the model and loss function.
+    model : PyTree
+        Model whose inexact-array leaves are optimized; the rest is
+        recombined as static structure.
+    loss_fn : LossFunction
+        ``loss_fn(model, **sample)`` -- or ``loss_fn(model, key=key,
+        **sample)`` when ``pass_rng`` -- returning a scalar loss.
+    pass_rng : bool
+        Whether ``loss_fn`` takes a ``key`` keyword (a stochastic loss).
     optimizer : type[DistributionBasedAlgorithm]
         EvoSax algorithm class.
     opt_hash : int
         Stable hash stamped into ``OptHistory.update_step``.
-    popsize : int or Callable[[TaskLike], int], optional
+    popsize : int or Callable[[int], int], optional
         Population size; either an integer or a callable taking the
         ``Task`` and returning an integer. Defaults to
         :func:`variable_popsize` (``int(4 + 3 * log(d))``).
@@ -391,7 +397,7 @@ def evosax_distribution_update(
     name : str, optional
         Registry name, used only to resolve this optimizer's
         state-transfer overrides
-        (:data:`~l2co_optimizers._src.state_transfer.TRANSFER_OVERRIDES`).
+        (:data:`~l2co_optimizers._src.core.state_transfer.TRANSFER_OVERRIDES`).
         Declared explicitly rather than left to
         ``**hyperparameters`` so it is never forwarded to the
         underlying constructor. Defaults to ``""``, which resolves
@@ -404,8 +410,8 @@ def evosax_distribution_update(
     UpdateClass
         Configured optimizer wrapper.
     """
-    popsize = resolve_popsize(popsize, task)
-    params, static = eqx.partition(task.model, eqx.is_inexact_array)
+    popsize = resolve_popsize(popsize, model)
+    params, static = eqx.partition(model, eqx.is_inexact_array)
 
     optimizer = optimizer(population_size=popsize, solution=params)
     es_params = optimizer.default_params.replace(**hyperparameters)
@@ -413,12 +419,12 @@ def evosax_distribution_update(
     init_fn, step_fn = evosax_distribution_based_fn(
         static=static,
         optimizer=optimizer,
-        loss_fn=task.loss_fn,
+        loss_fn=loss_fn,
         bounded=bounded,
         popsize=popsize,
         es_params=es_params,
         opt_hash=opt_hash,
-        pass_rng=task.pass_rng,
+        pass_rng=pass_rng,
     )
     read_fn, write_fn = build_transfer_fns(
         name,
@@ -441,7 +447,10 @@ def evosax_distribution_update(
 
 
 def evosax_population_update(
-    task: TaskLike,
+    *,
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
     optimizer: type[PopulationBasedAlgorithm],
     opt_hash: int,
     popsize: PopSize = variable_popsize,
@@ -455,13 +464,19 @@ def evosax_population_update(
 
     Parameters
     ----------
-    task : TaskLike
-        Task providing the model and loss function.
+    model : PyTree
+        Model whose inexact-array leaves are optimized; the rest is
+        recombined as static structure.
+    loss_fn : LossFunction
+        ``loss_fn(model, **sample)`` -- or ``loss_fn(model, key=key,
+        **sample)`` when ``pass_rng`` -- returning a scalar loss.
+    pass_rng : bool
+        Whether ``loss_fn`` takes a ``key`` keyword (a stochastic loss).
     optimizer : type[PopulationBasedAlgorithm]
         EvoSax algorithm class.
     opt_hash : int
         Stable hash stamped into ``OptHistory.update_step``.
-    popsize : int or Callable[[TaskLike], int], optional
+    popsize : int or Callable[[int], int], optional
         Population size; either an integer or a callable taking the
         ``Task`` and returning an integer. Defaults to
         :func:`variable_popsize` (``int(4 + 3 * log(d))``).
@@ -474,7 +489,7 @@ def evosax_population_update(
     name : str, optional
         Registry name, used only to resolve this optimizer's
         state-transfer overrides
-        (:data:`~l2co_optimizers._src.state_transfer.TRANSFER_OVERRIDES`).
+        (:data:`~l2co_optimizers._src.core.state_transfer.TRANSFER_OVERRIDES`).
         Declared explicitly rather than left to
         ``**hyperparameters`` so it is never forwarded to the
         underlying constructor. Defaults to ``""``, which resolves
@@ -487,8 +502,8 @@ def evosax_population_update(
     UpdateClass
         Configured optimizer wrapper.
     """
-    popsize = resolve_popsize(popsize, task)
-    params, static = eqx.partition(task.model, eqx.is_inexact_array)
+    popsize = resolve_popsize(popsize, model)
+    params, static = eqx.partition(model, eqx.is_inexact_array)
 
     optimizer = optimizer(population_size=popsize, solution=params)
     es_params = optimizer.default_params.replace(**hyperparameters)
@@ -496,12 +511,12 @@ def evosax_population_update(
     init_fn, step_fn = evosax_population_based_fn(
         static=static,
         optimizer=optimizer,
-        loss_fn=task.loss_fn,
+        loss_fn=loss_fn,
         bounded=bounded,
         popsize=popsize,
         es_params=es_params,
         opt_hash=opt_hash,
-        pass_rng=task.pass_rng,
+        pass_rng=pass_rng,
     )
     spec = transfer_spec_for(name, FAMILY_POPULATION)
     read_fn, write_fn = build_transfer_fns(

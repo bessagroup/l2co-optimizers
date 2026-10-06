@@ -5,16 +5,17 @@ Module for samplers.
 #                                                                       Modules
 # =============================================================================
 
-# Third party
+# Standard
 from collections.abc import Callable
 
+# Third-party
 import jax
 import jax.numpy as jnp
 from jax.nn import initializers
 from jaxtyping import PRNGKeyArray, PyTree
 
 # Local
-from l2co_optimizers._src.typing import InputParameters
+from l2co_optimizers._src.core.typing import InputParameters
 
 #                                                          Authorship & Credits
 # =============================================================================

@@ -1,6 +1,7 @@
 """What one optimizer can hand the next when control passes to it.
 
-The handshake in :mod:`~l2co_optimizers._src.handshake_policy` answers
+The handshake -- l2co's handshake policy (l2co ADR 0009), which lives
+with the rest of the switching layer in l2co (l2co ADR 0019) -- answers
 *which population* the incoming optimizer sees and *whether* its internal
 state survives. It carries no information **out of** the outgoing
 optimizer: the incoming one is handed a point and, at best, told to keep
@@ -16,8 +17,8 @@ adapters rather than ``N²``. The justification is maintainability
 compile time and code size (a pairwise dispatch would trace ``N²``
 branches), and redundancy (most of those ``N²`` cells would be derived
 from the same handful of statistics anyway). It is explicitly **not** a
-per-tick runtime argument: rl2co's ``map_unroll`` and l2co's
-:func:`~l2co._src.update_class.batch_run_sequential_` both execute only
+per-tick runtime argument: rl2co's ``map_unroll`` and
+:meth:`UpdateClass.batch_run_sequential` both execute only
 the branch actually selected, so per-tick cost does not scale with the
 branch count.
 
@@ -74,21 +75,32 @@ optimizer (``scale_by_learning_rate`` carries an ``EmptyState``), and the
 ravel function an evosax algorithm uses to flatten a solution pytree.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Standard
 from __future__ import annotations
 
 from collections.abc import Callable
 
+# Third-party
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
 from jaxtyping import Array, Bool, Float, PyTree
 
-from l2co_optimizers._src.typing import (
+# Local
+from l2co_optimizers._src.core.typing import (
     TransferReadFunction,
     TransferWriteFunction,
 )
 
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
 # =============================================================================
 
 __all__ = [
@@ -900,7 +912,7 @@ def make_write_population(repair_baseline: bool) -> Callable:
     statistic -- the luckiest draw, not the value the point returns now.
 
     The claim is made anyway, and the reason is worth stating because an
-    earlier version of this gated it on ``task.pass_rng``. **Whether a
+    earlier version of this gated it on ``pass_rng``. **Whether a
     loss is deterministic is not something a handshake may read.** A
     real problem does not come labelled, the caller usually cannot say,
     and an update rule that changes shape depending on how the objective
@@ -1258,7 +1270,7 @@ def transfer_spec_for(name: str, family: str) -> TransferSpec:
     ----------
     name : str
         Registry name, normalised as in
-        :func:`~l2co_optimizers._src.utils.normalize_key`.
+        :func:`~l2co_optimizers._src.core.utils.normalize_key`.
     family : str
         One of :data:`FAMILIES`, supplied by the constructing factory,
         which knows which family it is building. Not inferred from

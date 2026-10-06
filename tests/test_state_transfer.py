@@ -33,10 +33,15 @@ deterministic loss, false on a stochastic one, where claiming it
 collapses the mutation scale. See ``docs/adr/0014``.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Standard
 from __future__ import annotations
 
 from collections.abc import Callable
 
+# Third-party
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -56,6 +61,7 @@ from evosax.algorithms.population_based import (
     SimpleGA,
 )
 
+# Local
 from l2co_optimizers import (
     CONF_ABSENT,
     CONF_EXACT,
@@ -63,14 +69,23 @@ from l2co_optimizers import (
     FAMILY_DISTRIBUTION,
     FAMILY_GRADIENT,
     FAMILY_POPULATION,
-    TRANSFER_OVERRIDES,
     TransferBundle,
     build_transfer_fns,
-    transfer_spec_for,
 )
 from l2co_optimizers import optimizers as REGISTRY
+from l2co_optimizers._src.core.state_transfer import (
+    TRANSFER_OVERRIDES,
+    transfer_spec_for,
+)
 
-from .toy_tasks import sphere_task
+from .toy_problems import sphere_problem
+
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
+# =============================================================================
 
 DIM = 10
 POPSIZE = 10
@@ -500,13 +515,13 @@ class TestNonFiniteBundleIsRefused:
     """
 
     @pytest.fixture(scope="class")
-    def task(self):
-        return sphere_task(DIM)
+    def problem(self):
+        return sphere_problem(DIM)
 
     @staticmethod
-    def _built(task, name, hp):
+    def _built(problem, name, hp):
         update_class = REGISTRY[name](
-            task=task, opt_hash=0, bounded=(None, None), stop_fn=None, **hp
+            **problem, opt_hash=0, bounded=(None, None), stop_fn=None, **hp
         )
         params = jnp.zeros((update_class.popsize, DIM))
         return update_class, update_class.init_fn(params, jr.key(0))
@@ -547,8 +562,8 @@ class TestNonFiniteBundleIsRefused:
         ("label", "x", "f", "sigma"), POISON, ids=[c[0] for c in POISON]
     )
     @pytest.mark.parametrize("name", list(MENU))
-    def test_no_leaf_is_poisoned(self, task, name, label, x, f, sigma):
-        update_class, opt_state = self._built(task, name, MENU[name])
+    def test_no_leaf_is_poisoned(self, problem, name, label, x, f, sigma):
+        update_class, opt_state = self._built(problem, name, MENU[name])
         if update_class.transfer_write_fn is None:
             pytest.skip(f"{name} has no writer")
         # ``conf_sigma`` is deliberately confident: the point is that a
@@ -564,7 +579,7 @@ class TestNonFiniteBundleIsRefused:
             f"{name} poisoned by {label}"
         )
 
-    def test_distribution_keeps_its_own_mean(self, task):
+    def test_distribution_keeps_its_own_mean(self, problem):
         """The fallback, stated positively.
 
         A NaN ``mean`` is unrecoverable -- every ``ask`` returns NaN,
@@ -572,7 +587,7 @@ class TestNonFiniteBundleIsRefused:
         is dead for the rest of the episode. Keeping its own mean lets it
         carry on from where it was.
         """
-        update_class, opt_state = self._built(task, "crfmnes", {})
+        update_class, opt_state = self._built(problem, "crfmnes", {})
         bundle = TransferBundle(
             x=jnp.full((1, DIM), jnp.nan),
             f=jnp.asarray(0.0),
@@ -588,7 +603,7 @@ class TestNonFiniteBundleIsRefused:
         leaves = jax.tree.leaves(population)
         assert all(bool(jnp.all(jnp.isfinite(leaf))) for leaf in leaves)
 
-    def test_mr15ga_keeps_its_elite_when_f_is_infinite(self, task):
+    def test_mr15ga_keeps_its_elite_when_f_is_infinite(self, problem):
         """``+inf`` is the reachable case, and it inverts the 1/5 rule.
 
         ``best_loss`` starts at ``+inf`` and stays there while nothing
@@ -598,7 +613,7 @@ class TestNonFiniteBundleIsRefused:
         rule reads a 100% success rate and doubles the width right after
         the scale write set it.
         """
-        update_class, opt_state = self._built(task, "mr15ga", {})
+        update_class, opt_state = self._built(problem, "mr15ga", {})
         opt_state = opt_state.replace(
             fitness=jnp.full_like(jnp.asarray(opt_state.fitness), 100.0)
         )
@@ -628,13 +643,13 @@ class TestRegistryGuards:
     """Guards over the whole registry, not one optimizer at a time."""
 
     @pytest.fixture(scope="class")
-    def task(self):
-        return sphere_task(DIM)
+    def problem(self):
+        return sphere_problem(DIM)
 
-    def test_menu_builds_with_transfer_wired(self, task):
+    def test_menu_builds_with_transfer_wired(self, problem):
         for i, (name, hp) in enumerate(MENU.items()):
             update_class = REGISTRY[name](
-                task=task,
+                **problem,
                 opt_hash=i,
                 bounded=(None, None),
                 stop_fn=None,
@@ -644,7 +659,7 @@ class TestRegistryGuards:
             assert callable(update_class.transfer_read_fn), name
             assert callable(update_class.transfer_write_fn), name
 
-    def test_own_ask_optimizers_expose_ask(self, task):
+    def test_own_ask_optimizers_expose_ask(self, problem):
         # A missing ``ask_fn`` does not raise -- it silently degrades to
         # the old population-substitution path, which is exactly the bug
         # this work exists to remove. So it gets its own guard.
@@ -658,7 +673,7 @@ class TestRegistryGuards:
         # caller will never reach.
         for i, (name, hp) in enumerate(MENU.items()):
             update_class = REGISTRY[name](
-                task=task,
+                **problem,
                 opt_hash=i,
                 bounded=(None, None),
                 stop_fn=None,
@@ -672,7 +687,7 @@ class TestRegistryGuards:
             else:
                 assert update_class.ask_fn is None, name
 
-    def test_registry_binds_the_resolved_spec(self, task):
+    def test_registry_binds_the_resolved_spec(self, problem):
         """A factory that forgets ``name=`` must fail here, loudly.
 
         ``build_transfer_fns`` keys the ``TRANSFER_OVERRIDES`` lookup on
@@ -687,7 +702,7 @@ class TestRegistryGuards:
 
         This is not hypothetical. ``lbfgs_update`` delegates to
         ``optax_update_extra_kwargs`` on deterministic tasks
-        (``not task.pass_rng``, which is most of them) and shipped
+        (``not problem["pass_rng"]``, which is most of them) and shipped
         without ``name="lbfgs"``, so L-BFGS reported no scale on every
         switch out of it. The tests then in place all passed: the
         provider assertions are gated on the bundle carrying something,
@@ -700,7 +715,7 @@ class TestRegistryGuards:
             if name not in REGISTRY:
                 continue
             update_class = REGISTRY[name](
-                task=task,
+                **problem,
                 opt_hash=i,
                 bounded=(None, None),
                 stop_fn=None,
@@ -740,17 +755,17 @@ class TestRegistryGuards:
                     == expected_write.__name__
                 ), f"{name}: bound the wrong writer ({spec.writer} expected)"
 
-    def test_lbfgs_reports_a_scale_on_a_deterministic_task(self, task):
+    def test_lbfgs_reports_a_scale_on_a_deterministic_task(self, problem):
         """The regression above, pinned end to end.
 
-        ``task.pass_rng`` is false here, which is the path that was
+        ``problem["pass_rng"]`` is false here, which is the path that was
         broken. After a few steps L-BFGS has accepted steps in
         ``diff_params_memory``, so its reader must report one --
         ``CONF_ABSENT`` here means the override is not bound.
         """
-        assert not task.pass_rng
+        assert not problem["pass_rng"]
         update_class = REGISTRY["lbfgs"](
-            task=task, opt_hash=0, bounded=(None, None), stop_fn=None
+            **problem, opt_hash=0, bounded=(None, None), stop_fn=None
         )
         params = jnp.zeros((update_class.popsize, DIM))
         opt_state = update_class.init_fn(params, jr.key(0))
@@ -767,9 +782,9 @@ class TestRegistryGuards:
         assert float(sigma) > 0.0
         assert jnp.isfinite(sigma)
 
-    def test_ask_fn_emits_a_full_population(self, task):
+    def test_ask_fn_emits_a_full_population(self, problem):
         update_class = REGISTRY["crfmnes"](
-            task=task, opt_hash=0, bounded=(None, None), stop_fn=None
+            **problem, opt_hash=0, bounded=(None, None), stop_fn=None
         )
         params = jnp.zeros((update_class.popsize, DIM))
         opt_state = update_class.init_fn(params, jr.key(0))
@@ -778,7 +793,7 @@ class TestRegistryGuards:
         assert leaves
         assert all(leaf.shape[0] == update_class.popsize for leaf in leaves)
 
-    def test_readers_agree_on_output_layout(self, task):
+    def test_readers_agree_on_output_layout(self, problem):
         """All readers must be usable in one ``lax.switch``.
 
         The bundle crosses a switch on the outgoing optimizer's index,
@@ -788,7 +803,7 @@ class TestRegistryGuards:
         """
         built = [
             REGISTRY[name](
-                task=task,
+                **problem,
                 opt_hash=i,
                 bounded=(None, None),
                 stop_fn=None,
@@ -816,7 +831,7 @@ class TestRegistryGuards:
             assert jnp.shape(conf) == ()
             assert sigma.dtype == conf.dtype
 
-    def test_lbfgs_reports_its_very_first_step(self, task):
+    def test_lbfgs_reports_its_very_first_step(self, problem):
         """One iteration is a visit length the policy actually picks.
 
         ``lbfgs`` is the one optimizer tabulated ``reset``, so its
@@ -827,7 +842,7 @@ class TestRegistryGuards:
         that was actually taken, not merely be finite.
         """
         update_class = REGISTRY["lbfgs"](
-            task=task, opt_hash=0, bounded=(None, None), stop_fn=None
+            **problem, opt_hash=0, bounded=(None, None), stop_fn=None
         )
         before = jnp.zeros((update_class.popsize, DIM))
         carry = (before, update_class.init_fn(before, jr.key(0)), jr.key(0))
@@ -916,7 +931,7 @@ class TestBaselineRepair:
     would not, since ``best_loss`` is a running minimum and so the
     luckiest draw. The claim is made anyway.
 
-    An earlier version gated this on ``task.pass_rng``. That is not a
+    An earlier version gated this on ``problem["pass_rng"]``. That is not a
     property a handshake may read: a real problem does not come
     labelled, the caller usually cannot say, and an update rule whose
     shape depends on how the objective was declared is not one you can

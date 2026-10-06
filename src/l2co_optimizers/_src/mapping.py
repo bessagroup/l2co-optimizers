@@ -1,7 +1,14 @@
 """Mapping from optimizer names to their UpdateClass implementations."""
 
+#                                                                       Modules
+# =============================================================================
+
+# Standard
 from collections.abc import Callable
 
+# Local
+from l2co_optimizers._src.core.update_class import UpdateClass
+from l2co_optimizers._src.core.utils import normalize_key
 from l2co_optimizers._src.evosax_implementations import evosax_mapping
 from l2co_optimizers._src.lbfgs import lbfgs_mapping
 from l2co_optimizers._src.optax_implementations import optax_mapping
@@ -9,8 +16,13 @@ from l2co_optimizers._src.random_search import random_search_mapping
 from l2co_optimizers._src.rbf_trust_region import rbf_trust_region_mapping
 from l2co_optimizers._src.shade import shade_mapping
 from l2co_optimizers._src.turbo import turbo_mapping
-from l2co_optimizers._src.update_class import UpdateClass
-from l2co_optimizers._src.utils import normalize_key
+
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
+# =============================================================================
 
 # Registry of optimizer-name -> factory callables. Each value is a callable
 # that, when called with the keyword contract used by ``RunState.init``
@@ -20,13 +32,13 @@ from l2co_optimizers._src.utils import normalize_key
 # NOT hardcoded here: l2co's own ``"l2co"`` strategy self-registers via
 # ``register_optimizer`` from ``l2co._src.meta_optimizer`` (a side effect of
 # ``import l2co``), exactly the way importing ``rl2co`` registers ``"rl2co"``.
-# Keeping this back-edge out of the optimizers subpackage is what breaks the
-# ``l2co_update -> strategy_wrapper -> sub_optimizer`` import cycle — see
+# Keeping this back-edge out of the registry is what breaks the
+# ``l2co_update -> strategy_wrapper -> optimizer registry`` import cycle — see
 # ``l2co ADR 0007``.
-#: Registry keys are stored under :func:`~l2co_optimizers._src.utils.
+#: Registry keys are stored under :func:`~l2co_optimizers._src.core.utils.
 #: normalize_key`, which strips non-alphanumerics and lowercases. Both
 #: lookup paths must agree on this: ``RunState.init`` resolves the raw
-#: name a config wrote, while ``sub_optimizer.resolve_popsize`` resolves
+#: name a config wrote, while ``optimizer_parts.resolve_popsize`` resolves
 #: an already-normalized one. Every single-word name (all 61 of the
 #: originals) normalizes to itself, so this only starts to matter for a
 #: name carrying an underscore -- where storing it raw makes the
@@ -65,9 +77,11 @@ def register_optimizer(name: str, factory: Callable[..., UpdateClass]) -> None:
         the same way through every call path. Re-registering an existing
         name overwrites the previous factory.
     factory : Callable[..., UpdateClass]
-        Factory callable that returns an ``UpdateClass``. It must accept the
-        same keyword contract that ``RunState.init`` calls it with:
-        ``**hyperparameters, task, opt_hash, bounded, stop_fn``.
+        Factory callable that returns an ``UpdateClass``. It must accept
+        the bare-factory keyword contract: ``model``, ``loss_fn``,
+        ``pass_rng``, ``opt_hash``, ``bounded``, ``stop_fn`` and
+        ``**hyperparameters``. Meta-optimizers, which need a full task,
+        register with ``l2co.register_optimizer`` instead.
     """
     optimizers[normalize_key(name)] = factory
 
