@@ -27,7 +27,7 @@ from l2co_optimizers._src.optax_implementations import (
 )
 from l2co_optimizers._src.update_class import UpdateClass
 
-from .toy_tasks import ToyTask
+from .toy_problems import quadratic_problem
 
 # =============================================================================
 
@@ -45,9 +45,9 @@ def _quadratic(model):
     return jnp.sum(model**2)
 
 
-def _build(task: ToyTask):
+def _build(problem: dict):
     return optimizer_mapping("lbfgs")(
-        task=task,
+        **problem,
         opt_hash=1,
         bounded=(-5.0, 5.0),
         stop_fn=None,
@@ -99,13 +99,12 @@ def test_every_linesearch_evaluation_gets_a_fresh_key():
         )
         return jnp.sum(model**2) * jnp.exp(1.0 * jr.normal(key, ()))
 
-    task = ToyTask(
+    problem = quadratic_problem(
         model=jnp.zeros(4),
         loss_fn=logging_loss,
-        global_min=0.0,
         pass_rng=True,
     )
-    update_class = _build(task)
+    update_class = _build(problem)
 
     params = jnp.full((1, 4), 2.0)
     state = update_class.init_fn(params, jr.key(0))
@@ -131,7 +130,7 @@ def test_every_linesearch_evaluation_gets_a_fresh_key():
 #                                                            Deterministic path
 
 
-def test_deterministic_task_matches_previous_registry_wiring():
+def test_deterministic_problem_matches_previous_registry_wiring():
     """Without ``pass_rng`` the factory uses stock ``optax.lbfgs``.
 
     Fresh keys per evaluation of a deterministic loss are a
@@ -140,15 +139,14 @@ def test_deterministic_task_matches_previous_registry_wiring():
     (``optax_update_extra_kwargs`` with ``optax.lbfgs``)
     under the same seeds — and must never hand the loss a key.
     """
-    task = ToyTask(
+    problem = quadratic_problem(
         model=jnp.zeros(4),
         loss_fn=_quadratic,
-        global_min=0.0,
         pass_rng=False,
     )
-    new_wiring = _build(task)
+    new_wiring = _build(problem)
     old_wiring = optax_update_extra_kwargs(
-        task=task,
+        **problem,
         optimizer=optax.lbfgs,
         opt_hash=1,
         bounded=(-5.0, 5.0),
@@ -166,13 +164,12 @@ def test_deterministic_task_matches_previous_registry_wiring():
 
 def test_converges_on_mildly_noisy_quadratic():
     """Sanity: the machinery still optimizes when noise is small."""
-    task = ToyTask(
+    problem = quadratic_problem(
         model=jnp.zeros(4),
         loss_fn=_noisy_quadratic(beta=1e-3),
-        global_min=0.0,
         pass_rng=True,
     )
-    update_class = _build(task)
+    update_class = _build(problem)
     final_params, losses = _run_steps(update_class, n_steps=15)
     assert bool(jnp.isfinite(losses).all())
     assert float(jnp.linalg.norm(final_params)) < 1e-3
@@ -180,13 +177,12 @@ def test_converges_on_mildly_noisy_quadratic():
 
 def test_stays_finite_under_severe_noise():
     """Severe noise may stall progress but must never produce NaNs."""
-    task = ToyTask(
+    problem = quadratic_problem(
         model=jnp.zeros(4),
         loss_fn=_noisy_quadratic(beta=1.0),
-        global_min=0.0,
         pass_rng=True,
     )
-    update_class = _build(task)
+    update_class = _build(problem)
     final_params, losses = _run_steps(update_class, n_steps=15)
     assert bool(jnp.isfinite(losses).all())
     assert bool(jnp.isfinite(final_params).all())
@@ -214,20 +210,18 @@ def _run_collect(update_class, n_steps: int, dim: int = 4):
     return fevals, trials
 
 
-def _deterministic_task():
-    return ToyTask(
+def _deterministic_problem():
+    return quadratic_problem(
         model=jnp.zeros(4),
         loss_fn=_quadratic,
-        global_min=0.0,
         pass_rng=False,
     )
 
 
-def _stochastic_task():
-    return ToyTask(
+def _stochastic_problem():
+    return quadratic_problem(
         model=jnp.zeros(4),
         loss_fn=_noisy_quadratic(beta=1.0),
-        global_min=0.0,
         pass_rng=True,
     )
 
@@ -244,11 +238,11 @@ def test_fevals_bill_every_linesearch_trial():
     Both wirings are checked: the stock linesearch on deterministic
     tasks and the per-eval-key linesearch on stochastic ones.
     """
-    for task in (_deterministic_task(), _stochastic_task()):
-        fevals, trials = _run_collect(_build(task), n_steps=8)
+    for problem in (_deterministic_problem(), _stochastic_problem()):
+        fevals, trials = _run_collect(_build(problem), n_steps=8)
         expected = [trials[0] + 1] + trials[1:]
         assert fevals == expected, (
-            f"pass_rng={task.pass_rng}: billed {fevals}, "
+            f"pass_rng={problem['pass_rng']}: billed {fevals}, "
             f"linesearch spent {trials}"
         )
 
@@ -265,7 +259,7 @@ def test_fevals_vary_across_steps():
     every step, so the count is nearly constant there and would make a
     vacuous assertion.
     """
-    fevals, _ = _run_collect(_build(_stochastic_task()), n_steps=15)
+    fevals, _ = _run_collect(_build(_stochastic_problem()), n_steps=15)
     assert len(set(fevals)) >= 3, fevals
 
 
@@ -280,7 +274,7 @@ def test_exhausted_linesearch_bills_the_cap():
     """
     cap = 5
     update_class = optimizer_mapping("lbfgs")(
-        task=_stochastic_task(),
+        **_stochastic_problem(),
         opt_hash=1,
         bounded=(-5.0, 5.0),
         stop_fn=None,
@@ -293,11 +287,11 @@ def test_exhausted_linesearch_bills_the_cap():
 
 def test_fevals_bound_tracks_max_linesearch_steps():
     """``fevals_bound`` is the cap plus the first-step recompute."""
-    default = _build(_deterministic_task())
+    default = _build(_deterministic_problem())
     assert default.fevals_bound == DEFAULT_MAX_LINESEARCH_STEPS + 1
 
     override = optimizer_mapping("lbfgs")(
-        task=_deterministic_task(),
+        **_deterministic_problem(),
         opt_hash=1,
         bounded=(-5.0, 5.0),
         stop_fn=None,

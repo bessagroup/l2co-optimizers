@@ -33,7 +33,7 @@ from l2co_optimizers._src.sub_optimizer import (
     optstep_to_subopt,
 )
 
-from .toy_tasks import sphere_task
+from .toy_problems import sphere_problem
 
 # =============================================================================
 
@@ -63,8 +63,8 @@ def _subopt_registries() -> set[str]:
 
 
 @pytest.fixture(scope="module")
-def task():
-    return sphere_task(4)
+def problem():
+    return sphere_problem(4)
 
 
 class TestRegistryCoverage:
@@ -94,20 +94,20 @@ class TestRegistryCoverage:
 class TestLBFGSDispatch:
     """``"lbfgs"`` resolves to a working gradient-based ``SubOpt``."""
 
-    def test_resolves_to_grad_subopt(self, task):
-        sub = optstep_to_subopt(OptimizationStep(optimizer="lbfgs"), task)
+    def test_resolves_to_grad_subopt(self, problem):
+        sub = optstep_to_subopt(OptimizationStep(optimizer="lbfgs"), **problem)
         assert sub.is_pop is False
         assert sub.popsize == 1
         assert sub.tell_fn is None
 
-    def test_hyperparameters_reach_the_transform(self, task):
+    def test_hyperparameters_reach_the_transform(self, problem):
         # memory_size is a stock_lbfgs kwarg; a bogus one must surface
         # as a TypeError rather than being silently dropped.
         sub = optstep_to_subopt(
             OptimizationStep(
                 optimizer="lbfgs", hyperparameters={"memory_size": 3}
             ),
-            task,
+            **problem,
         )
         assert sub.is_pop is False
         with pytest.raises(TypeError):
@@ -116,14 +116,14 @@ class TestLBFGSDispatch:
                     optimizer="lbfgs",
                     hyperparameters={"not_an_lbfgs_kwarg": 1},
                 ),
-                task,
+                **problem,
             )
 
-    def test_step_takes_a_line_searched_step(self, task):
+    def test_step_takes_a_line_searched_step(self, problem):
         # The line search needs the value/grad/value_fn extra args; a
         # plain step_fn call without them would TypeError. A successful
         # step on a quadratic must decrease the loss.
-        sub = optstep_to_subopt(OptimizationStep(optimizer="lbfgs"), task)
+        sub = optstep_to_subopt(OptimizationStep(optimizer="lbfgs"), **problem)
 
         def value_fn(p):
             return jnp.sum(p**2)
@@ -147,7 +147,7 @@ class TestLBFGSDispatch:
 class TestUnresolvableName:
     """The error names the registries, not just ``optax``/``evosax``."""
 
-    def test_raises_with_actionable_message(self, task):
+    def test_raises_with_actionable_message(self, problem):
         # Reproduce the drift the coverage test guards: a name present
         # in the optimizer registry but in none of the SubOpt
         # registries. An *unregistered* name cannot reach this error --
@@ -165,13 +165,13 @@ class TestUnresolvableName:
                         optimizer=name,
                         hyperparameters={"learning_rate": 0.01},
                     ),
-                    task,
+                    **problem,
                 )
         finally:
             OPTIMIZER_REGISTRY.pop(name, None)
 
-    def test_unregistered_name_raises_earlier(self, task):
+    def test_unregistered_name_raises_earlier(self, problem):
         with pytest.raises(ValueError, match="not recognized"):
             optstep_to_subopt(
-                OptimizationStep(optimizer="no_such_optimizer"), task
+                OptimizationStep(optimizer="no_such_optimizer"), **problem
             )

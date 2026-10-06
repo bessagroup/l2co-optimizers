@@ -5,7 +5,7 @@ The ``UpdateClass`` adapter and the run loop that drives it.
 and its methods are the loop that runs it on a dataset: ``init_state``,
 ``step`` / ``batch_step``, ``run``, and the multi-realization drivers
 ``batch_run`` / ``batch_run_fused`` / ``batch_run_sequential`` (l2co ADR
-0017). The factories that build one from a task plus an optimizer
+0017). The factories that build one from a model and loss plus an optimizer
 specification live with their library -- ``optax_update`` /
 ``optax_update_extra_kwargs`` in
 :mod:`~l2co_optimizers._src.optax_implementations`,

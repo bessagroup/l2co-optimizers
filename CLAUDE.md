@@ -18,23 +18,23 @@ It was extracted from `l2co` (`bessagroup/L2CO@f677d8c`); see l2co ADR 0016. JAX
 ```
 l2co-tasks        l2co-optimizers        (neither imports the other)
         \            /
-            l2co               <- the bridge: RunState, RolloutWrapper, exports
+            l2co               <- the bridge: RolloutWrapper, exports, meta-optimizers
           /       \
      rl2co     agentic-l2co
 ```
 
 - **Never import `l2co` or `l2co_tasks` from `src/`.** A ruff `TID251` banned-api rule fails the lint, and `tests/test_optimizers_facade.py` asserts it in a fresh interpreter.
-- **Tasks arrive only as `TaskLike`** (`model`, `loss_fn`, `pass_rng`; `_src/typing.py`). Derive the dimensionality with `count_parameters(task.model)`.
+- **There is no task here** (l2co ADR 0018). Factories take `model`, `loss_fn` and `pass_rng` as required keywords; `RunState.init` takes a built `UpdateClass` plus `model`, `dataset`, `batch_size`. Popsize callables take the dimensionality (`count_parameters(model)`). `tests/test_optimizers_facade.py` rejects any public callable with a `task` parameter.
 - **The run loop lives here, as `UpdateClass` methods** (l2co ADR 0017): `init_state`, `step` / `batch_step`, `run`, `batch_run` (routes on `sequential_realizations`), `batch_run_fused`, `batch_run_sequential`. So do the states it threads: `BatchState`, the `HistoryState` buffer and `Carry`. The loop takes a plain `dict[str, Array]` dataset, never a task.
   - `RandomSearchUpdateClass` overrides `run` (chunked) and `batch_run` (always sequential, for peak memory).
-  - **What stays in l2co:** building a run from a `Task` (`RunState`, `RolloutWrapper`), `HistoryState`'s exports (`l2co.history_to_xarray` / `history_to_xarray_realizations` / `history_to_dataloader`, which need xarray and the ERT), and every meta-optimizer (`strategy_wrapper`, `meta_optimizer`, models).
+  - **`RunState`** (`_src/run_state.py`) is here too, with `reset` / `batch_reset` / `run` / `batch_run` / `batch_evaluate` and `evaluate` (`_src/model_evaluation.py`): `RunState.init` takes an already-built `UpdateClass` (l2co's `init_run_state` resolves the `OptimizationStep` against a task), and the rest rewraps the `UpdateClass` loop. l2co re-exports them.
+  - **What stays in l2co:** `RolloutWrapper`, `HistoryState`'s exports (`l2co.history_to_xarray` / `history_to_xarray_realizations` / `history_to_dataloader`, which need xarray and the ERT), and every meta-optimizer (`strategy_wrapper`, `meta_optimizer`, models).
 
 ## Commands
 
 ```bash
 uv sync --extra tests --extra dev
-make test            # uv run pytest (l2co_tasks integration module skips)
-uv run --with-editable ../l2co-tasks pytest      # + real-Task integration
+make test            # uv run pytest (the real-Task battery lives in l2co)
 make lint            # uv run ruff check
 make docs            # uv run mkdocs build
 ```
@@ -44,7 +44,7 @@ The git hook calls `pre-commit`, which is not on PATH in the devcontainer. Run `
 ## Architecture
 
 - **Public surface:** `src/l2co_optimizers/__init__.py`, one flat namespace mirroring `l2co_tasks`. The implementation lives in `_src/`. Add new public symbols in both places, and add them to `tests/test_optimizers_facade.py`'s origin table.
-- **Registry** (`_src/mapping.py`): keys are stored under `normalize_key`, which strips non-alphanumerics and lowercases. Every factory follows one keyword convention: `task=`, `opt_hash=`, `bounded=`, `stop_fn=`, plus `**hyperparameters`.
+- **Registry** (`_src/mapping.py`): keys are stored under `normalize_key`, which strips non-alphanumerics and lowercases. Every factory follows one keyword convention: `model=`, `loss_fn=`, `pass_rng=`, `opt_hash=`, `bounded=`, `stop_fn=`, plus `**hyperparameters`. Meta-optimizers register in l2co, not here.
 - **Factories:** they live next to their library.
   - `optax_update` / `optax_update_extra_kwargs` and the `optax_fn` closures are in `_src/optax_implementations.py`.
   - The evosax equivalents are in `_src/evosax_implementations.py`.

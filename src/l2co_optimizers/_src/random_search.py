@@ -28,9 +28,9 @@ from l2co_optimizers._src.sampler import get_sampler
 from l2co_optimizers._src.state_transfer import FAMILY_POPULATION
 from l2co_optimizers._src.typing import (
     InputParameters,
+    LossFunction,
     PopSize,
     StopFunction,
-    TaskLike,
 )
 from l2co_optimizers._src.update_class import RunResult, UpdateClass
 
@@ -89,13 +89,13 @@ class RandomSearchUpdateClass(UpdateClass):
     ----------
     sampling_fn : Callable
         Closure ``(key, n_samples) -> InputParameters`` that draws
-        ``n_samples`` candidates with leaves shaped like the task's
+        ``n_samples`` candidates with leaves shaped like the
         model parameters.
     static_model : PyTree
-        The non-inexact-array partition of ``task.model``; recombined
+        The non-inexact-array partition of ``model``; recombined
         with sampled candidates via ``eqx.combine`` before evaluation.
     loss_fn : Callable
-        Loss function taken from ``task.loss_fn``.
+        The loss the factory was handed.
     pass_rng : bool
         Whether the loss function accepts a ``key`` keyword argument.
     bounded : tuple[float | None, float | None]
@@ -402,7 +402,10 @@ class RandomSearchUpdateClass(UpdateClass):
 
 
 def random_search_update(
-    task: TaskLike,
+    *,
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
     opt_hash: int,
     bounded: tuple[float | None, float | None] = (None, None),
     stop_fn: StopFunction | None = None,
@@ -419,8 +422,14 @@ def random_search_update(
 
     Parameters
     ----------
-    task : TaskLike
-        Task to optimize (provides ``model``, ``loss_fn``, ``pass_rng``).
+    model : PyTree
+        Model whose inexact-array leaves are optimized; the rest is
+        recombined as static structure.
+    loss_fn : LossFunction
+        ``loss_fn(model, **sample)`` -- or ``loss_fn(model, key=key,
+        **sample)`` when ``pass_rng`` -- returning a scalar loss.
+    pass_rng : bool
+        Whether ``loss_fn`` takes a ``key`` keyword (a stochastic loss).
     opt_hash : int
         Hash from the originating ``OptimizationStep``; stamped into
         ``OptHistory.update_step`` for downstream tracking.
@@ -437,7 +446,7 @@ def random_search_update(
         :func:`l2co_optimizers._src.sampler.get_sampler`. Must accept ``(key,
         params, n_samples, ...)`` -- i.e. ``"random"``, ``"normal"``,
         ``"xavier"``, or ``"constant"``. Default ``"random"``.
-    popsize : int or Callable[[TaskLike], int], optional
+    popsize : int or Callable[[int], int], optional
         Candidates per logical iteration; total evaluations per
         ``step`` call equal ``popsize * n_iterations``. Either a
         literal integer or a callable taking the ``Task`` (e.g.
@@ -451,18 +460,16 @@ def random_search_update(
     Returns
     -------
     UpdateClass
-        A :class:`RandomSearchUpdateClass` ready to slot into
-        l2co's ``RunState``.
+        A :class:`RandomSearchUpdateClass` ready to slot into a
+        :class:`~l2co_optimizers.RunState`.
     """
     del stop_fn  # accepted but unused; see docstring
-    popsize = resolve_popsize(popsize, task)
-    model_params, static_model = eqx.partition(
-        task.model, eqx.is_inexact_array
-    )
+    popsize = resolve_popsize(popsize, model)
+    model_params, static_model = eqx.partition(model, eqx.is_inexact_array)
     sampler_fn = get_sampler(sampler)
 
     def sampling_fn(key: PRNGKeyArray, n_samples: int) -> InputParameters:
-        """Draw ``n_samples`` candidates shaped like ``task.model``."""
+        """Draw ``n_samples`` candidates shaped like ``model``."""
         return sampler_fn(
             key,
             params=model_params,
@@ -478,8 +485,8 @@ def random_search_update(
     return RandomSearchUpdateClass(
         sampling_fn=sampling_fn,
         static_model=static_model,
-        loss_fn=task.loss_fn,
-        pass_rng=task.pass_rng,
+        loss_fn=loss_fn,
+        pass_rng=pass_rng,
         bounded=bounded,
         popsize=popsize,
         hash=opt_hash,

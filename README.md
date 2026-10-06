@@ -21,11 +21,11 @@ It also ships the *strategy-facing* layer meta-optimizers dispatch through: the 
 ## Statement of need
 
 Learning-to-optimize and optimizer-selection research needs many optimizers behind one calling convention, so that a selector can switch between them mid-run. `l2co-optimizers` provides that convention without the meta-learning stack:
-- every optimizer is built by `optimizer_mapping(name)(task=..., opt_hash=..., bounded=..., stop_fn=...)`;
+- every optimizer is built by `optimizer_mapping(name)(model=..., loss_fn=..., pass_rng=..., opt_hash=..., bounded=..., stop_fn=...)`;
 - every one steps through the same `(params, opt_state, key)` carry;
 - every one reports into the same `OptHistory`.
 
-It depends on neither `l2co` nor `l2co-tasks`. A task reaches it only through `TaskLike`, a structural protocol (`model`, `loss_fn`, `pass_rng`) that `l2co_tasks.Task` satisfies unchanged. `l2co` is the bridge that runs one on the other.
+It depends on neither `l2co` nor `l2co-tasks`, and has no notion of a task: factories take `model`, `loss_fn` and `pass_rng` as keywords. `l2co` is the bridge that unpacks an `l2co_tasks.Task` into them (l2co ADR 0018).
 
 ## Authorship
 
@@ -52,30 +52,25 @@ cd l2co-optimizers
 uv sync
 ```
 
-Build an optimizer from the registry and step it. Any object with `model`, `loss_fn` and `pass_rng` is a task:
+Build an optimizer from the registry and step it. A factory takes the problem as three keywords -- `model`, `loss_fn` and `pass_rng` -- never as a task object:
 
 ```python
-from dataclasses import dataclass
 import jax.numpy as jnp, jax.random as jr
-from l2co_optimizers import optimizer_mapping, TaskLike
+from l2co_optimizers import optimizer_mapping
 
-@dataclass
-class Sphere:
-    model = jnp.zeros(4)
-    pass_rng = False
-    def loss_fn(self, x, **sample):
-        return jnp.sum((x - 0.5) ** 2)
+def sphere(x, **sample):
+    return jnp.sum((x - 0.5) ** 2)
 
-task = Sphere()
-assert isinstance(task, TaskLike)
-
-cmaes = optimizer_mapping("cmaes")(task=task, opt_hash=1)
-params = jnp.repeat(task.model[None], cmaes.popsize, axis=0)
+model = jnp.zeros(4)
+cmaes = optimizer_mapping("cmaes")(
+    model=model, loss_fn=sphere, pass_rng=False, opt_hash=1
+)
+params = jnp.repeat(model[None], cmaes.popsize, axis=0)
 state = cmaes.init_fn(params, jr.key(0))
 (params, state, key), history = cmaes.step_fn((params, state, jr.key(0)), sample={})
 ```
 
-To run an optimizer on an `l2co_tasks.Task` over a full budget, with batching, realizations and the history reduction, use `l2co.RunState` / `l2co.RolloutWrapper`. To add your own optimizer, see [Register your own optimizer](./docs/register_optimizer.ipynb).
+To run an optimizer on an `l2co_tasks.Task` over a full budget, with batching, realizations and the history reduction, use l2co's `init_run_state` and `batch_evaluate` (or its `RolloutWrapper`): l2co is where a task meets an optimizer. To add your own optimizer, see [Register your own optimizer](./docs/register_optimizer.ipynb).
 
 ## Hydra optimizer configurations
 

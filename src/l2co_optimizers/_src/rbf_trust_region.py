@@ -78,6 +78,7 @@ from evosax.types import Fitness, Population, Solution
 # or plain dataclasses would do.
 from flax import struct
 from jax.tree_util import Partial
+from jaxtyping import PyTree
 
 from l2co_optimizers._src.evosax_implementations import (
     evosax_population_based_fn,
@@ -89,7 +90,11 @@ from l2co_optimizers._src.state_transfer import (
     FAMILY_POPULATION,
     build_transfer_fns,
 )
-from l2co_optimizers._src.typing import PopSize, StopFunction, TaskLike
+from l2co_optimizers._src.typing import (
+    LossFunction,
+    PopSize,
+    StopFunction,
+)
 from l2co_optimizers._src.update_class import UpdateClass
 
 #                                                          Authorship & Credits
@@ -142,14 +147,14 @@ def default_n_candidates(num_dims: int, archive_size: int) -> int:
     return int(min(max(n, N_CANDIDATES_MIN), N_CANDIDATES_MAX))
 
 
-def rbf_popsize(task: TaskLike) -> int:
+def rbf_popsize(dimensionality: int) -> int:
     """Evaluations per iteration; small, because the point is frugality.
 
     A trust-region model method conventionally evaluates one point per
     iteration. A small batch keeps that character while giving the
     harness a population to vectorize over.
     """
-    del task
+    del dimensionality
     return 5
 
 
@@ -487,7 +492,10 @@ class RBFTrustRegion(PopulationBasedAlgorithm):
 
 
 def rbf_trust_region_update(
-    task: TaskLike,
+    *,
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
     opt_hash: int,
     popsize: PopSize = rbf_popsize,
     bounded: tuple[float, float] | None = (None, None),
@@ -506,11 +514,17 @@ def rbf_trust_region_update(
 
     Parameters
     ----------
-    task : TaskLike
-        Task providing the model and loss function.
+    model : PyTree
+        Model whose inexact-array leaves are optimized; the rest is
+        recombined as static structure.
+    loss_fn : LossFunction
+        ``loss_fn(model, **sample)`` -- or ``loss_fn(model, key=key,
+        **sample)`` when ``pass_rng`` -- returning a scalar loss.
+    pass_rng : bool
+        Whether ``loss_fn`` takes a ``key`` keyword (a stochastic loss).
     opt_hash : int
         Stable hash stamped into ``OptHistory.update_step``.
-    popsize : int or Callable[[TaskLike], int], optional
+    popsize : int or Callable[[int], int], optional
         Real evaluations per iteration; defaults to :func:`rbf_popsize`.
     bounded : tuple[float, float] or None, optional
         Box bounds applied after each step and injected into the
@@ -530,8 +544,8 @@ def rbf_trust_region_update(
     UpdateClass
         Configured optimizer wrapper.
     """
-    popsize = resolve_popsize(popsize, task)
-    params, static = eqx.partition(task.model, eqx.is_inexact_array)
+    popsize = resolve_popsize(popsize, model)
+    params, static = eqx.partition(model, eqx.is_inexact_array)
 
     optimizer = RBFTrustRegion(
         population_size=popsize,
@@ -553,12 +567,12 @@ def rbf_trust_region_update(
     init_fn, step_fn = evosax_population_based_fn(
         static=static,
         optimizer=optimizer,
-        loss_fn=task.loss_fn,
+        loss_fn=loss_fn,
         bounded=bounded,
         popsize=popsize,
         es_params=es_params,
         opt_hash=opt_hash,
-        pass_rng=task.pass_rng,
+        pass_rng=pass_rng,
     )
 
     # The trust-region radius is this optimizer's scale, and it is the

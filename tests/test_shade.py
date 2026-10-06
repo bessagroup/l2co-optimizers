@@ -22,7 +22,7 @@ from l2co_optimizers._src.shade import (
     shade_update,
 )
 
-from .toy_tasks import sphere_task
+from .toy_problems import sphere_problem
 
 # =============================================================================
 
@@ -334,19 +334,14 @@ def test_population_size_minimum_enforced():
 
 
 def test_shade_popsize_floor():
-    class _Stub:
-        def __init__(self, dimensionality):
-            self.model = jnp.zeros(dimensionality)
-
-    assert shade_popsize(_Stub(2)) == 10
-    big = _Stub(100_000)
-    assert shade_popsize(big) == variable_popsize(big) > 10
+    assert shade_popsize(2) == 10
+    assert shade_popsize(100_000) == variable_popsize(100_000) > 10
 
 
 def test_factory_constructor_vs_params_split():
-    task = sphere_task(2)
+    problem = sphere_problem(2)
     update_class = shade_update(
-        task=task,
+        **problem,
         opt_hash=1,
         bounded=(0.0, 1.0),
         stop_fn=None,
@@ -357,7 +352,7 @@ def test_factory_constructor_vs_params_split():
     )
     assert update_class.popsize == 12
 
-    params, _ = eqx.partition(task.model, eqx.is_inexact_array)
+    params, _ = eqx.partition(problem["model"], eqx.is_inexact_array)
     population = jax.tree.map(
         lambda x: jnp.broadcast_to(x, (12, *x.shape)), params
     )
@@ -367,10 +362,10 @@ def test_factory_constructor_vs_params_split():
 
 
 def test_factory_turning_requires_bounds_and_budget():
-    task = sphere_task(2)
+    problem = sphere_problem(2)
     with pytest.raises(ValueError, match="finite box bounds"):
         shade_update(
-            task=task,
+            **problem,
             opt_hash=1,
             bounded=(None, None),
             stop_fn=None,
@@ -379,7 +374,7 @@ def test_factory_turning_requires_bounds_and_budget():
         )
     with pytest.raises(ValueError, match="max_fevals"):
         shade_update(
-            task=task,
+            **problem,
             opt_hash=1,
             bounded=(0.0, 1.0),
             stop_fn=None,
@@ -387,7 +382,7 @@ def test_factory_turning_requires_bounds_and_budget():
         )
     # Fully specified turning configuration constructs fine.
     shade_update(
-        task=task,
+        **problem,
         opt_hash=1,
         bounded=(0.0, 1.0),
         stop_fn=None,
@@ -399,11 +394,11 @@ def test_factory_turning_requires_bounds_and_budget():
 def test_first_generation_tie_does_not_pollute_memory():
     # The adapter's first step re-evaluates the initial population and
     # tells it against itself; ties must not count as successes.
-    task = sphere_task(2)
+    problem = sphere_problem(2)
     update_class = shade_update(
-        task=task, opt_hash=1, bounded=(0.0, 1.0), stop_fn=None
+        **problem, opt_hash=1, bounded=(0.0, 1.0), stop_fn=None
     )
-    params, _ = eqx.partition(task.model, eqx.is_inexact_array)
+    params, _ = eqx.partition(problem["model"], eqx.is_inexact_array)
     population = jax.tree.map(
         lambda x: (
             jnp.broadcast_to(x, (update_class.popsize, *x.shape))

@@ -46,7 +46,6 @@ from l2co_optimizers._src.typing import (
     LossFunction,
     StepFunction,
     StopFunction,
-    TaskLike,
 )
 
 # Local
@@ -327,7 +326,10 @@ def optax_extra_kwargs_fn(
 
 
 def optax_update(
-    task: TaskLike,
+    *,
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
     optimizer: Callable[..., optax.GradientTransformation],
     opt_hash: int,
     popsize: int = 1,
@@ -340,8 +342,14 @@ def optax_update(
 
     Parameters
     ----------
-    task : TaskLike
-        Task providing the model and loss function.
+    model : PyTree
+        Model whose inexact-array leaves are optimized; the rest is
+        recombined as static structure.
+    loss_fn : LossFunction
+        ``loss_fn(model, **sample)`` -- or ``loss_fn(model, key=key,
+        **sample)`` when ``pass_rng`` -- returning a scalar loss.
+    pass_rng : bool
+        Whether ``loss_fn`` takes a ``key`` keyword (a stochastic loss).
     optimizer : Callable[..., optax.GradientTransformation]
         Optax optimizer constructor (e.g. ``optax.adam``).
     opt_hash : int
@@ -371,15 +379,15 @@ def optax_update(
     UpdateClass
         Configured optimizer wrapper.
     """
-    _, static = eqx.partition(task.model, eqx.is_inexact_array)
+    _, static = eqx.partition(model, eqx.is_inexact_array)
 
     init_fn, step_fn = optax_fn(
         static=static,
         optimizer=optimizer(**hyperparameters),
-        loss_fn=task.loss_fn,
+        loss_fn=loss_fn,
         bounded=bounded,
         opt_hash=opt_hash,
-        pass_rng=task.pass_rng,
+        pass_rng=pass_rng,
     )
     read_fn, write_fn = build_transfer_fns(
         name, FAMILY_GRADIENT, hyperparameters
@@ -398,7 +406,10 @@ def optax_update(
 
 
 def optax_update_extra_kwargs(
-    task: TaskLike,
+    *,
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
     optimizer: Callable[..., optax.GradientTransformationExtraArgs],
     opt_hash: int,
     popsize: int = 1,
@@ -414,8 +425,14 @@ def optax_update_extra_kwargs(
 
     Parameters
     ----------
-    task : TaskLike
-        Task providing the model and loss function.
+    model : PyTree
+        Model whose inexact-array leaves are optimized; the rest is
+        recombined as static structure.
+    loss_fn : LossFunction
+        ``loss_fn(model, **sample)`` -- or ``loss_fn(model, key=key,
+        **sample)`` when ``pass_rng`` -- returning a scalar loss.
+    pass_rng : bool
+        Whether ``loss_fn`` takes a ``key`` keyword (a stochastic loss).
     optimizer : Callable[..., optax.GradientTransformationExtraArgs]
         Optax optimizer constructor supporting extra update kwargs.
     opt_hash : int
@@ -449,15 +466,15 @@ def optax_update_extra_kwargs(
     UpdateClass
         Configured optimizer wrapper.
     """
-    _, static = eqx.partition(task.model, eqx.is_inexact_array)
+    _, static = eqx.partition(model, eqx.is_inexact_array)
 
     init_fn, step_fn = optax_extra_kwargs_fn(
         static=static,
         optimizer=optimizer(**hyperparameters),
-        loss_fn=task.loss_fn,
+        loss_fn=loss_fn,
         bounded=bounded,
         opt_hash=opt_hash,
-        pass_rng=task.pass_rng,
+        pass_rng=pass_rng,
     )
     read_fn, write_fn = build_transfer_fns(
         name, FAMILY_GRADIENT, hyperparameters

@@ -900,7 +900,7 @@ def make_write_population(repair_baseline: bool) -> Callable:
     statistic -- the luckiest draw, not the value the point returns now.
 
     The claim is made anyway, and the reason is worth stating because an
-    earlier version of this gated it on ``task.pass_rng``. **Whether a
+    earlier version of this gated it on ``pass_rng``. **Whether a
     loss is deterministic is not something a handshake may read.** A
     real problem does not come labelled, the caller usually cannot say,
     and an update rule that changes shape depending on how the objective

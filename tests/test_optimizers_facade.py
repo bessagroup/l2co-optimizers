@@ -7,6 +7,7 @@ importing it loads neither ``l2co`` nor ``l2co_tasks``.
 """
 
 import importlib
+import inspect
 import subprocess
 import sys
 
@@ -28,6 +29,7 @@ def test_all_symbols_are_importable():
         ("register_optimizer", "l2co_optimizers._src.mapping"),
         ("optimizer_mapping", "l2co_optimizers._src.mapping"),
         ("optimizers", "l2co_optimizers._src.mapping"),
+        ("normalize_key", "l2co_optimizers._src.utils"),
         # Contract types
         ("InitFunction", "l2co_optimizers._src.typing"),
         ("StepFunction", "l2co_optimizers._src.typing"),
@@ -69,7 +71,6 @@ def test_all_symbols_are_importable():
         ),
         ("random_search_update", "l2co_optimizers._src.random_search"),
         # Moved in from l2co with the package split
-        ("TaskLike", "l2co_optimizers._src.typing"),
         ("OptimizationStep", "l2co_optimizers._src.optimizer_schedule"),
         (
             "register_schedule_namer",
@@ -87,6 +88,13 @@ def test_all_symbols_are_importable():
         ("BatchState", "l2co_optimizers._src.batching"),
         ("HistoryState", "l2co_optimizers._src.history_state"),
         ("Carry", "l2co_optimizers._src.typing"),
+        ("RunState", "l2co_optimizers._src.run_state"),
+        ("reset", "l2co_optimizers._src.run_state"),
+        ("batch_reset", "l2co_optimizers._src.run_state"),
+        ("run", "l2co_optimizers._src.run_state"),
+        ("batch_run", "l2co_optimizers._src.run_state"),
+        ("batch_evaluate", "l2co_optimizers._src.run_state"),
+        ("evaluate", "l2co_optimizers._src.model_evaluation"),
         ("RunResult", "l2co_optimizers._src.update_class"),
         # Read by l2co's bridge: random-search dispatch + plot categories
         ("RandomSearchUpdateClass", "l2co_optimizers._src.random_search"),
@@ -112,7 +120,7 @@ def test_package_imports_neither_l2co_nor_l2co_tasks():
     """The layering the split exists for (l2co ADR 0016).
 
     Run in a fresh interpreter: in this test session another module may
-    already have imported ``l2co_tasks`` (the opt-in integration tests).
+    already have imported ``l2co_tasks``.
     """
     code = (
         "import sys, l2co_optimizers; "
@@ -127,3 +135,41 @@ def test_package_imports_neither_l2co_nor_l2co_tasks():
         check=True,
     ).stdout.strip()
     assert out == "", f"importing l2co_optimizers loaded: {out}"
+
+
+def _public_callables():
+    """Every public callable, plus the methods of every public class."""
+    for name in facade.__all__:
+        obj = getattr(facade, name)
+        if inspect.isclass(obj):
+            for attr, member in vars(obj).items():
+                if isinstance(member, (classmethod, staticmethod)):
+                    member = member.__func__
+                if callable(member) and not attr.startswith("__"):
+                    yield f"{name}.{attr}", member
+            yield name, obj
+        elif callable(obj):
+            yield name, obj
+        elif isinstance(obj, dict):
+            # The registries: every factory a name resolves to.
+            for key, factory in obj.items():
+                if callable(factory):
+                    yield f"{name}[{key!r}]", factory
+
+
+def test_no_public_callable_takes_a_task():
+    """There is no task here: factories take ``model`` / ``loss_fn`` /
+    ``pass_rng``, and turning a task into those is l2co's job.
+
+    Ruff stops an ``l2co_tasks`` import; this stops the same coupling
+    coming back as an untyped ``task`` parameter.
+    """
+    offenders = []
+    for qualname, fn in _public_callables():
+        try:
+            params = inspect.signature(fn).parameters
+        except (TypeError, ValueError):
+            continue
+        if "task" in params:
+            offenders.append(qualname)
+    assert offenders == [], f"take a task: {offenders}"

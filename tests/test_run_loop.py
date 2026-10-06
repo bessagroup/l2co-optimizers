@@ -39,7 +39,7 @@ from l2co_optimizers import (
     optimizer_mapping,
 )
 
-from .toy_tasks import sphere_task
+from .toy_problems import sphere_problem
 
 N_ITERATIONS = 6
 N_REALIZATIONS = 3
@@ -61,7 +61,7 @@ _PLAIN_IDS = [name for name, _ in _PLAIN]
 def _build(name, hyperparameters, stop_fn=None, opt_hash=7):
     return optimizer_mapping(name)(
         **hyperparameters,
-        task=sphere_task(DIM),
+        **sphere_problem(DIM),
         opt_hash=opt_hash,
         bounded=(None, None),
         stop_fn=stop_fn,
@@ -69,7 +69,7 @@ def _build(name, hyperparameters, stop_fn=None, opt_hash=7):
 
 
 def _batch_inputs(update_class: UpdateClass, key):
-    """Realization-axis inputs, as l2co's ``batch_evaluate`` builds them."""
+    """Realization-axis inputs, as :func:`batch_evaluate` builds them."""
     init_key, params_key = jr.split(key)
     keys = jr.split(init_key, N_REALIZATIONS)
     batch_state = BatchState.init(dataset={}, batch_size=None, key=key)
@@ -122,7 +122,7 @@ def test_run_returns_the_documented_contract(name, hyper):
     # still hold the best).
     assert float(best_loss) <= float(jnp.nanmin(history.output_min)) + 1e-6
     assert float(best_loss) == pytest.approx(
-        float(sphere_task(DIM).loss_fn(best_params)), rel=1e-5
+        float(sphere_problem(DIM)["loss_fn"](best_params)), rel=1e-5
     )
 
 

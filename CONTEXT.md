@@ -13,23 +13,28 @@ An optimizer that optimizes a task directly — Adam, CMA-ES, SHADE,
 L-BFGS — as opposed to a **meta-optimizer** (`l2co`, `rl2co`,
 `agentic-l2co`) that selects among bare optimizers. Only bare
 optimizers ship here; meta-optimizers register into the same registry
-from their own packages.
+from their own packages (l2co's Task-level registry, l2co ADR 0018).
 _Avoid_: "static optimizer" (l2co_experiments' name for the same thing
 in pipeline code), "base optimizer"
 
-**TaskLike**:
-The only view of a task this package takes: any object with `model`,
-`loss_fn` and `pass_rng`. Structural, so `l2co_tasks.Task` satisfies it
-without either package importing the other. Dimensionality is not part
-of it — it is derived from `model` (`count_parameters`).
-_Avoid_: importing `l2co_tasks.Task` here (the ruff ban will stop you)
+**Problem keywords**:
+`model`, `loss_fn` and `pass_rng` — the only view of the thing being
+optimized this package takes, passed to every factory as separate
+required keywords (plus `dataset` / `batch_size` for `RunState.init`).
+There is no task type here: l2co unpacks an `l2co_tasks.Task` into
+these (l2co ADR 0018). Dimensionality is derived from `model`
+(`count_parameters`) and is what a popsize callable receives.
+_Avoid_: "task" for any parameter or type in this package (a guard
+test rejects a public `task` parameter; the ruff ban rejects
+`l2co_tasks`)
 
 **Registry**:
 `optimizers` / `optimizer_mapping`: normalized optimizer name → factory.
-Every factory takes the same keywords — `task=`, `opt_hash=`,
-`bounded=`, `stop_fn=`, plus hyperparameters — and returns an
-`UpdateClass`. `register_optimizer` is the extension point
-meta-optimizers use.
+Every factory takes the same keywords — `model=`, `loss_fn=`,
+`pass_rng=`, `opt_hash=`, `bounded=`, `stop_fn=`, plus hyperparameters
+— and returns an `UpdateClass`. `register_optimizer` adds a *bare*
+optimizer; meta-optimizers, which need a whole task, register with
+`l2co.register_optimizer` instead.
 
 **UpdateClass**:
 The static, JIT-friendly container one optimizer is reduced to:
