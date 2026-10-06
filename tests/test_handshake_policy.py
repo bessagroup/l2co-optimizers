@@ -7,8 +7,13 @@ tests pin the table's contents, the fallback, and the propagation into
 ``SubOpt.opt_state_handshake`` that lets the wrappers act on it.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Third-party
 import pytest
 
+# Local
 from l2co_optimizers import (
     DEFAULT_HANDSHAKE_POLICY,
     HANDSHAKE_POLICY,
@@ -21,6 +26,13 @@ from l2co_optimizers import (
 )
 
 from .toy_problems import rastrigin_problem
+
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
+# =============================================================================
 
 
 @pytest.fixture(scope="module")

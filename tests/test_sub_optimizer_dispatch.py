@@ -13,11 +13,16 @@ which is exactly what happened when ``"lbfgs"`` moved out of
 guard against that class of drift.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Third-party
 import jax
 import jax.numpy as jnp
 import jax.random as jr
 import pytest
 
+# Local
 import l2co_optimizers
 from l2co_optimizers import OptimizationStep
 from l2co_optimizers._src.evosax_implementations import normalized_evosax
@@ -35,6 +40,11 @@ from l2co_optimizers._src.sub_optimizer import (
 
 from .toy_problems import sphere_problem
 
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
 # =============================================================================
 
 # Meta-optimizers select *among* sub-optimizers, so they are not

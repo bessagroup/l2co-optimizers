@@ -10,12 +10,17 @@ rather than real tasks: only ``is_pop`` and ``popsize`` are read from
 the menu, so nothing here needs an optimizer to actually run.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Third-party
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
 import pytest
 
+# Local
 from l2co_optimizers import (
     GRAD_EVALUATION_WIDTH,
     SubOpt,
@@ -23,6 +28,13 @@ from l2co_optimizers import (
     vmapped_loss,
     vmapped_loss_and_grad,
 )
+
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
+# =============================================================================
 
 POPSIZE = 27
 DIM = 6

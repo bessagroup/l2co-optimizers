@@ -40,18 +40,29 @@ wrappers' on :class:`~l2co_optimizers._src.sub_optimizer.SubOpt` and
 their own strategy ``State``. Only the *decision* is shared there.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Standard
 from __future__ import annotations
 
 from collections.abc import Callable
 
+# Third-party
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import PRNGKeyArray, PyTree
 
+# Local
 from l2co_optimizers._src.optimizer_schedule import OptimizationStep
 from l2co_optimizers._src.typing import SamplerFunction
 
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
 # =============================================================================
 
 __all__ = [

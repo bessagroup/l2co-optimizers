@@ -23,12 +23,11 @@ hyperparameters.
 # Standard
 from __future__ import annotations
 
+# Third-party
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-
-# Third-party
 from evosax.algorithms import algorithms
 from evosax.algorithms.base import Params
 from evosax.algorithms.base import State as EvoSaxState
@@ -41,12 +40,11 @@ from evosax.algorithms.population_based.base import PopulationBasedAlgorithm
 from jax.tree_util import Partial
 from jaxtyping import PRNGKeyArray, PyTree
 
+# Local
 from l2co_optimizers._src.loss import (
     vmapped_loss,
     vmapped_loss_with_rng,
 )
-
-# Local
 from l2co_optimizers._src.opt_history import OptHistory
 from l2co_optimizers._src.popsize import (
     resolve_popsize,

@@ -80,12 +80,11 @@ from flax import struct
 from jax.tree_util import Partial
 from jaxtyping import PyTree
 
+# Local
 from l2co_optimizers._src.evosax_implementations import (
     evosax_population_based_fn,
 )
 from l2co_optimizers._src.popsize import resolve_popsize
-
-# Local
 from l2co_optimizers._src.state_transfer import (
     FAMILY_POPULATION,
     build_transfer_fns,

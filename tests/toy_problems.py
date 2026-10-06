@@ -13,14 +13,26 @@ for tests that inspect every generation's ``OptHistory``. The real loop
 is :meth:`UpdateClass.run` (``tests/test_run_loop.py``).
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Standard
 from __future__ import annotations
 
 from collections.abc import Callable
 
+# Third-party
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
+# =============================================================================
 
 
 def _sphere(x, **_):

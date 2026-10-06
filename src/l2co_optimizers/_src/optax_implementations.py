@@ -20,17 +20,17 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+# Third-party
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-
-# Third-party
 import optax
 from jax.tree_util import Partial
 from jaxtyping import PRNGKeyArray, PyTree
 from optax import OptState as OptaxState
 
+# Local
 from l2co_optimizers._src.loss import (
     vmapped_loss_and_grad,
     vmapped_loss_and_grad_with_rng,
@@ -47,8 +47,6 @@ from l2co_optimizers._src.typing import (
     StepFunction,
     StopFunction,
 )
-
-# Local
 from l2co_optimizers._src.update_class import UpdateClass
 from l2co_optimizers._src.utils import (
     normalize_key,

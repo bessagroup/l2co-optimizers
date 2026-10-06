@@ -33,10 +33,15 @@ deterministic loss, false on a stochastic one, where claiming it
 collapses the mutation scale. See ``docs/adr/0014``.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Standard
 from __future__ import annotations
 
 from collections.abc import Callable
 
+# Third-party
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -56,6 +61,7 @@ from evosax.algorithms.population_based import (
     SimpleGA,
 )
 
+# Local
 from l2co_optimizers import (
     CONF_ABSENT,
     CONF_EXACT,
@@ -71,6 +77,13 @@ from l2co_optimizers import (
 from l2co_optimizers import optimizers as REGISTRY
 
 from .toy_problems import sphere_problem
+
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
+# =============================================================================
 
 DIM = 10
 POPSIZE = 10

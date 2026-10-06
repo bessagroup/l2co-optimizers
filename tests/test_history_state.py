@@ -1,8 +1,20 @@
 """Unit tests for the front-fill semantics of ``HistoryState.add``."""
 
+#                                                                       Modules
+# =============================================================================
+
+# Third-party
 import jax.numpy as jnp
 
+# Local
 from l2co_optimizers import HistoryState, OptHistory
+
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
+# =============================================================================
 
 
 def _value_state(values, n: int) -> HistoryState:

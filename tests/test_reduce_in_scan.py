@@ -15,12 +15,24 @@ scan carry. These tests pin the two identities that equivalence rests on:
    skipped (all-NaN) generation.
 """
 
+#                                                                       Modules
+# =============================================================================
+
+# Third-party
 import jax
 import jax.numpy as jnp
 import numpy as np
 
+# Local
 from l2co_optimizers import HistoryState, OptHistory
 from l2co_optimizers._src.update_class import _reduce_entry, _update_best
+
+#                                                          Authorship & Credits
+# =============================================================================
+__author__ = "Martin van der Schelling (M.P.vanderSchelling@tudelft.nl)"
+__credits__ = ["Martin van der Schelling"]
+__status__ = "Stable"
+# =============================================================================
 
 N_ITER = 6
 POPSIZE = 5
