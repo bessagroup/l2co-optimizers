@@ -17,12 +17,14 @@ import pytest
 from l2co_optimizers import (
     DEFAULT_HANDSHAKE_POLICY,
     HANDSHAKE_POLICY,
-    OPT_STATE_VARIANTS,
-    POPULATION_VARIANTS,
     HandshakePolicy,
     OptimizationStep,
     handshake_policy_for,
     optstep_to_subopt,
+)
+from l2co_optimizers._src.handshake_policy import (
+    OPT_STATE_VARIANTS,
+    POPULATION_VARIANTS,
 )
 
 from .toy_problems import rastrigin_problem

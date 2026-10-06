@@ -55,15 +55,13 @@ def test_all_symbols_are_importable():
         ("OptHistory", "l2co_optimizers._src.opt_history"),
         ("vmapped_loss", "l2co_optimizers._src.loss"),
         ("vmapped_loss_and_grad", "l2co_optimizers._src.loss"),
-        ("vmapped_loss_and_grad_with_rng", "l2co_optimizers._src.loss"),
         ("vmapped_loss_with_rng", "l2co_optimizers._src.loss"),
         # Sub-optimizer primitives
         ("SubOpt", "l2co_optimizers._src.sub_optimizer"),
         ("optstep_to_subopt", "l2co_optimizers._src.sub_optimizer"),
-        ("resolve_popsize", "l2co_optimizers._src.sub_optimizer"),
         ("grad_sub_optimizer", "l2co_optimizers._src.sub_optimizer"),
         ("pop_sub_optimizer", "l2co_optimizers._src.sub_optimizer"),
-        ("l2co_native_evosax", "l2co_optimizers._src.sub_optimizer"),
+        ("resolve_popsize", "l2co_optimizers._src.sub_optimizer"),
         ("CONSTRUCTOR_HYPERPARAMETERS", "l2co_optimizers._src.sub_optimizer"),
         # Handshake policy (docs/adr/0009)
         ("HandshakePolicy", "l2co_optimizers._src.handshake_policy"),
@@ -78,11 +76,6 @@ def test_all_symbols_are_importable():
             "normalized_optax_normal",
             "l2co_optimizers._src.optax_implementations",
         ),
-        (
-            "normalized_optax_from_state",
-            "l2co_optimizers._src.optax_implementations",
-        ),
-        ("random_search_update", "l2co_optimizers._src.random_search"),
         # Moved in from l2co with the package split
         ("OptimizationStep", "l2co_optimizers._src.optimizer_schedule"),
         (
@@ -105,15 +98,11 @@ def test_all_symbols_are_importable():
         ("reset", "l2co_optimizers._src.run_state"),
         ("batch_reset", "l2co_optimizers._src.run_state"),
         ("run", "l2co_optimizers._src.run_state"),
-        ("batch_run", "l2co_optimizers._src.run_state"),
         ("batch_evaluate", "l2co_optimizers._src.run_state"),
         ("evaluate", "l2co_optimizers._src.model_evaluation"),
         ("RunResult", "l2co_optimizers._src.update_class"),
-        # Read by l2co's bridge: random-search dispatch + plot categories
-        ("RandomSearchUpdateClass", "l2co_optimizers._src.random_search"),
-        ("random_search_mapping", "l2co_optimizers._src.random_search"),
+        # Per-library registries, read by l2co (plot categories)
         ("normalized_evosax", "l2co_optimizers._src.evosax_implementations"),
-        ("evosax_mapping", "l2co_optimizers._src.evosax_implementations"),
         ("optax_mapping", "l2co_optimizers._src.optax_implementations"),
         ("lbfgs_mapping", "l2co_optimizers._src.lbfgs"),
         ("shade_mapping", "l2co_optimizers._src.shade"),

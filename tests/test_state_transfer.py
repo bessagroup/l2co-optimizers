@@ -69,12 +69,14 @@ from l2co_optimizers import (
     FAMILY_DISTRIBUTION,
     FAMILY_GRADIENT,
     FAMILY_POPULATION,
-    TRANSFER_OVERRIDES,
     TransferBundle,
     build_transfer_fns,
-    transfer_spec_for,
 )
 from l2co_optimizers import optimizers as REGISTRY
+from l2co_optimizers._src.state_transfer import (
+    TRANSFER_OVERRIDES,
+    transfer_spec_for,
+)
 
 from .toy_problems import sphere_problem
 
