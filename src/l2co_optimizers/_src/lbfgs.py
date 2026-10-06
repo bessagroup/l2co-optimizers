@@ -268,10 +268,10 @@ def stock_lbfgs(
     variant.
 
     Used by :func:`lbfgs_update` as the deterministic-task fallback,
-    and by ``l2co_optimizers._src.sub_optimizer.l2co_native_optax`` as
-    the *only* L-BFGS variant on the ``SubOpt`` path — that path has no
-    channel for a per-evaluation key (see
-    :func:`~l2co_optimizers._src.sub_optimizer.optstep_to_subopt`).
+    and by ``l2co_optimizers._src.optimizer_parts.l2co_native_optax`` as
+    the *only* L-BFGS variant on the parts path (l2co's ``SubOpt``) —
+    that path has no channel for a per-evaluation key (see
+    :func:`~l2co_optimizers._src.optimizer_parts.optimizer_parts`).
     """
     return optax.lbfgs(
         learning_rate=learning_rate,

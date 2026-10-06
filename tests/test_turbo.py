@@ -232,7 +232,7 @@ def test_registered_on_both_lookup_paths() -> None:
     standalone and failed as a sub-step, 768 cells into a campaign.
     """
     from l2co_optimizers._src.mapping import optimizer_mapping
-    from l2co_optimizers._src.sub_optimizer import (
+    from l2co_optimizers._src.optimizer_parts import (
         CONSTRUCTOR_HYPERPARAMETERS,
         l2co_native_evosax,
     )

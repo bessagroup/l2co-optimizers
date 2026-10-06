@@ -32,13 +32,13 @@ __status__ = "Stable"
 # NOT hardcoded here: l2co's own ``"l2co"`` strategy self-registers via
 # ``register_optimizer`` from ``l2co._src.meta_optimizer`` (a side effect of
 # ``import l2co``), exactly the way importing ``rl2co`` registers ``"rl2co"``.
-# Keeping this back-edge out of the optimizers subpackage is what breaks the
-# ``l2co_update -> strategy_wrapper -> sub_optimizer`` import cycle — see
+# Keeping this back-edge out of the registry is what breaks the
+# ``l2co_update -> strategy_wrapper -> optimizer registry`` import cycle — see
 # ``l2co ADR 0007``.
 #: Registry keys are stored under :func:`~l2co_optimizers._src.core.utils.
 #: normalize_key`, which strips non-alphanumerics and lowercases. Both
 #: lookup paths must agree on this: ``RunState.init`` resolves the raw
-#: name a config wrote, while ``sub_optimizer.resolve_popsize`` resolves
+#: name a config wrote, while ``optimizer_parts.resolve_popsize`` resolves
 #: an already-normalized one. Every single-word name (all 61 of the
 #: originals) normalizes to itself, so this only starts to matter for a
 #: name carrying an underscore -- where storing it raw makes the
