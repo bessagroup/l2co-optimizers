@@ -18,7 +18,7 @@ bridge.md``.
 
 **Branches are deduplicated, but not for speed.** Under
 :func:`jax.vmap` -- which is how the batched driver
-(``l2co._src.update_class.batch_run_``) runs ``n_realizations``
+(:meth:`UpdateClass.batch_run_fused`) runs ``n_realizations``
 trajectories at once -- the dispatch index is per-realization, so
 ``lax.switch`` lowers to a ``select`` over *every* branch and all of
 them execute. That makes it look as though collapsing the canonical

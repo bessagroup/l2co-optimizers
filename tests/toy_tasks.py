@@ -6,8 +6,9 @@ smallest objects that satisfy :class:`l2co_optimizers.TaskLike`: a model
 (a flat parameter vector), a loss and a ``pass_rng`` flag. Building every
 optimizer from them is itself the check that the protocol is enough.
 
-:func:`run_steps` is a test-only loop -- ``init_fn`` then ``step_fn``
-repeatedly -- standing in for l2co's ``run_``, which stays in l2co.
+:func:`run_steps` is a bare ``init_fn`` then ``step_fn`` loop in Python,
+for tests that inspect every generation's ``OptHistory``. The real loop
+is :meth:`UpdateClass.run` (``tests/test_run_loop.py``).
 """
 
 from __future__ import annotations
@@ -71,7 +72,7 @@ def quadratic_task(model: jax.Array, loss_fn: Callable, pass_rng=False):
 def run_steps(update_class, task, n_steps: int, key=None):
     """Drive ``update_class`` for ``n_steps`` generations; test-only.
 
-    Mirrors the shape contract of l2co's ``init_`` / ``step``: the
+    Mirrors the shape contract of :meth:`UpdateClass.run`: the
     population carries a leading ``popsize`` axis and ``step_fn`` takes
     ``(params, opt_state, key)`` plus the (empty) data batch.
 

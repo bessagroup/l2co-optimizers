@@ -1,6 +1,6 @@
 # API Reference
 
-The whole public surface is the flat `l2co_optimizers` namespace. It is organised here the way an optimizer author meets it: the registry and the container every factory returns, the spec that names an optimizer, the contract types, then the built-in factories, and finally the strategy-facing layer meta-optimizers dispatch through.
+The whole public surface is the flat `l2co_optimizers` namespace. It is organised here the way an optimizer author meets it: the registry and the container every factory returns, the loop that runs it, the spec that names an optimizer, the contract types, then the built-in factories, and finally the strategy-facing layer meta-optimizers dispatch through.
 
 ## Registry & construction
 
@@ -17,6 +17,16 @@ The whole public surface is the flat `l2co_optimizers` namespace. It is organise
 `optimizers` is the merge of one name -> factory dict per library, each also exported on its own: `optax_mapping`, `evosax_mapping` (built from `normalized_evosax`, the normalized-name -> evosax class table), `lbfgs_mapping`, `shade_mapping`, `turbo_mapping`, `rbf_trust_region_mapping` and `random_search_mapping`. Consumers use them to group optimizers by library, e.g. l2co's plot categories.
 
 ::: l2co_optimizers.RandomSearchUpdateClass
+
+## Running an optimizer
+
+The run loop is a set of [`UpdateClass`](#l2co_optimizers.UpdateClass) methods (`init_state`, `step`, `run`, `batch_run`, `batch_run_fused`, `batch_run_sequential`; l2co ADR 0017). It takes a plain `dict[str, Array]` dataset and threads these states. Exporting a `HistoryState` to xarray or to a `DataLoader` is l2co's job (`l2co.history_to_xarray` and friends).
+
+::: l2co_optimizers.BatchState
+
+::: l2co_optimizers.HistoryState
+
+`Carry` is the scan carry, `(params, opt_state, key, batch_state, done, recent_history)`. `RunResult` is what every run driver returns, `(params, best_params, best_loss, opt_state, batch_state, history_state)`.
 
 ## Optimizer specification
 

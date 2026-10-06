@@ -13,7 +13,7 @@ portfolio is sample-efficient. This fills that hole with a third kind of
 search behaviour rather than a third variant of the two that exist.
 
 Three choices are forced by the rollout harness rather than by the
-algorithm, because ``batch_run_`` runs optimizers under
+algorithm, because ``UpdateClass.batch_run_fused`` runs optimizers under
 ``eqx.filter_vmap`` with a fixed-length scan, so every piece of state
 must be a fixed-shape array:
 

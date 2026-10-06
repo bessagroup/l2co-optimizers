@@ -83,6 +83,11 @@ def test_all_symbols_are_importable():
             "create_schedules_experimentdata",
             "l2co_optimizers._src.experimentdata",
         ),
+        # The run loop and the state it threads (l2co ADR 0017)
+        ("BatchState", "l2co_optimizers._src.batching"),
+        ("HistoryState", "l2co_optimizers._src.history_state"),
+        ("Carry", "l2co_optimizers._src.typing"),
+        ("RunResult", "l2co_optimizers._src.update_class"),
         # Read by l2co's bridge: random-search dispatch + plot categories
         ("RandomSearchUpdateClass", "l2co_optimizers._src.random_search"),
         ("random_search_mapping", "l2co_optimizers._src.random_search"),
