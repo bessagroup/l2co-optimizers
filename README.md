@@ -16,7 +16,7 @@ Bare optimizers compatible with the L2CO library
 - **the `OptimizationStep` spec** that names an optimizer with its hyperparameters and stopping criteria;
 - **ready-made Hydra optimizer configs**.
 
-It also ships the *strategy-facing* layer meta-optimizers dispatch through: the `SubOpt` adapter, the per-optimizer handshake policy and state transfer, and menu-dispatched loss evaluation. The meta-optimization strategies themselves (`l2co`, `rl2co`, `agentic-l2co`) and the loop that runs an optimizer on a task stay in [`l2co`](https://github.com/bessagroup/l2co).
+It also ships what each optimizer exposes to a loop that switches between optimizers: its state-transfer ports, and `optimizer_parts`, which unpacks it into an optax transform or an `(init, ask, tell)` triple. The switching layer itself (the `SubOpt` adapter, the handshake policy, menu-dispatched loss evaluation), the meta-optimization strategies (`l2co`, `rl2co`, `agentic-l2co`) and the bridge to tasks live in [`l2co`](https://github.com/bessagroup/l2co).
 
 ## Statement of need
 
@@ -115,7 +115,7 @@ This package is part of the L2CO ecosystem developed in the [Bessa Research Grou
 - [l2co](https://github.com/bessagroup/L2CO) — Learning to Choose Optimizers: a meta-learner that selects an optimizer from problem features before any evaluations, then reassesses that choice from the observed optimization trajectory.
 - [rl2co](https://github.com/bessagroup/rl2co) — Reinforcement Learning to Choose Optimizers: a JAX-based RL agent that dynamically switches between optimizers during a run.
 - [l2co-tasks](https://github.com/bessagroup/l2co-tasks) — Optimization task definitions (BBOB, CEC 2005, PDE, spiral, …) compatible with the L2CO library.
-- [l2co-optimizers](https://github.com/bessagroup/l2co-optimizers) — Bare optimizers (registry, `UpdateClass`, `OptimizationStep`, handshake and state transfer) compatible with the L2CO library.
+- [l2co-optimizers](https://github.com/bessagroup/l2co-optimizers) — Bare optimizers (registry, `UpdateClass`, `OptimizationStep`, state transfer) compatible with the L2CO library.
 - [l2co_experiments](https://github.com/bessagroup/l2co_experiments) — Hydra + f3dasm experiment pipelines (dataset creation, training, rollouts, figures) for the L2CO studies.
 - [agentic-l2co](https://github.com/bessagroup/agentic-l2co) — An LLM-agent drop-in replacement for `l2co.L2COModel`, driving two-stage optimizer selection with an Ollama-hosted LLM.
 - [bbob-jax](https://github.com/bessagroup/bbob-jax) — JAX implementations of the BBOB (noiseless and noisy), CEC 2005 and CEC 2017 black-box optimization benchmark functions.

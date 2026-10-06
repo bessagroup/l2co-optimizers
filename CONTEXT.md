@@ -2,9 +2,10 @@
 
 The bare optimizers of the L2CO ecosystem: what an optimizer *is* to
 the rest of the stack (registry, container, spec, contract), and the
-per-optimizer properties a meta-optimizer needs to switch between them.
-Running an optimizer on a task, and choosing between optimizers, live
-in `l2co`.
+per-optimizer properties a meta-optimizer needs to switch between them
+(transfer ports, own ask, optimizer parts). Running an optimizer on a
+task, switching between optimizers, and choosing which to switch to,
+live in `l2co`.
 
 ## Language
 
@@ -60,13 +61,24 @@ One ask/eval/tell cycle: exactly one iteration of the active
 optimizer, one history entry, one budget tick.
 _Avoid_: "step" (overloaded with optimizer-internal steps), "epoch"
 
-**Handshake**:
-The state transfer applied when the active optimizer changes: which
-population the incoming optimizer sees, and whether its internal
-state is reset or continued. Named variants: `best`, `best_one`,
-`reset_opt_state`, `continue_opt_state`. Which variants a given
-optimizer needs is tabulated once, in `HANDSHAKE_POLICY`, and shared by
-every consumer.
+**Transfer ports**:
+An optimizer's reader and writer for the `TransferBundle`
+(`UpdateClass.transfer_read_fn` / `transfer_write_fn`, built by
+`build_transfer_fns`): how it describes its own search scale to the next
+optimizer, and how it absorbs one. A property of the optimizer, so it
+ships here; *when* a switch happens and which population the incoming
+optimizer sees (the **handshake**) is l2co's switching layer (l2co ADR
+0019).
+
+**Optimizer parts**:
+A bare optimizer unpacked into the pieces a switching loop drives
+directly, with no handshake decision attached: `GradientParts` (the
+optax transform) or `PopulationParts` (an `(init, ask, tell)` triple),
+each carrying popsize, family, transfer ports and — for gradient
+transforms — the per-step feval bound. Built by `optimizer_parts`, the
+second construction path next to the `UpdateClass` factories; l2co
+wraps them into its `SubOpt` adapter.
+_Avoid_: "sub-optimizer" (l2co's adapter, which adds the handshake)
 
 **Own ask**:
 A per-optimizer property (`TransferSpec.own_ask`, surfaced as
@@ -75,23 +87,6 @@ optimizer draws its own post-switch population instead of being handed
 one. Set for every distribution-based algorithm and the mutation GAs;
 never inferred from `family`.
 
-**Menu**:
-The ordered tuple of candidate optimizers (`OptimizationStep`s) a
-meta-optimizer chooses from.
-_Avoid_: "portfolio" (reserved for the benchmark algorithm portfolio
-run during dataset creation), "optimizer list"
-
-**Generation width**:
-The fixed leading axis of every population a meta-optimizer emits:
-`max(popsize)` over the menu.
-
-**Evaluation width**:
-How many rows of an emitted population a generation actually
-evaluates: the active optimizer's `popsize`, or 1 for a gradient-based
-one. Never larger than the generation width; `menu_loss_and_grad`
-spends only this.
-
-**Padding row**:
-A row of an emitted population beyond the current evaluation width.
-Carried as `NaN` and never evaluated.
-_Avoid_: "dummy candidate", "slack slot"
+The switching vocabulary — **handshake**, **menu**, **generation
+width**, **evaluation width**, **padding row** — is defined in l2co's
+`CONTEXT.md`, next to the code that implements it.

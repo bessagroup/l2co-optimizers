@@ -8,7 +8,7 @@ Bare optimizers compatible with the L2CO library.
 - **the `OptimizationStep` spec** that names an optimizer with its hyperparameters and stopping criteria;
 - **ready-made Hydra optimizer configs**.
 
-It also ships the *strategy-facing* layer meta-optimizers dispatch through: the `SubOpt` adapter, the per-optimizer handshake policy and state transfer, and menu-dispatched loss evaluation. The meta-optimization strategies themselves (`l2co`, `rl2co`, `agentic-l2co`) and the loop that runs an optimizer on a task stay in [`l2co`](https://github.com/bessagroup/l2co).
+It also ships what each optimizer exposes to a loop that switches between optimizers: its state-transfer ports, and `optimizer_parts`, which unpacks it into an optax transform or an `(init, ask, tell)` triple. The switching layer itself (the `SubOpt` adapter, the handshake policy, menu-dispatched loss evaluation), the meta-optimization strategies (`l2co`, `rl2co`, `agentic-l2co`) and the bridge to tasks live in [`l2co`](https://github.com/bessagroup/l2co).
 
 ## Statement of need
 

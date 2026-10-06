@@ -2,7 +2,7 @@
 
 The implementations (optax, evosax, L-BFGS, SHADE, TuRBO, RBF trust
 region, random search) and the modules that must see all of them
-(``mapping``, ``sub_optimizer``, ``menu_eval``) depend on the core, never
+(``mapping``, ``optimizer_parts``) depend on the core, never
 the other way round. Checked statically, including ``TYPE_CHECKING`` and
 function-local imports, so a cycle cannot hide behind a lazy import.
 """

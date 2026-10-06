@@ -58,7 +58,9 @@ The run loop is a set of [`UpdateClass`](#l2co_optimizers.UpdateClass) methods (
 
 ::: l2co_optimizers.vmapped_loss_and_grad
 
-::: l2co_optimizers.menu_loss_and_grad
+::: l2co_optimizers.vmapped_loss_with_rng
+
+::: l2co_optimizers.vmapped_loss_and_grad_with_rng
 
 ## Samplers
 
@@ -84,23 +86,19 @@ The run loop is a set of [`UpdateClass`](#l2co_optimizers.UpdateClass) methods (
 
 ::: l2co_optimizers.shade_update
 
-## Sub-optimizer adapter
+## Optimizer parts
 
-::: l2co_optimizers.SubOpt
+What a loop that switches between optimizers drives directly. The
+switching layer itself (`SubOpt`, the handshake policy, menu
+evaluation) lives in l2co (l2co ADR 0019).
 
-::: l2co_optimizers.optstep_to_subopt
+::: l2co_optimizers.optimizer_parts
 
-::: l2co_optimizers.grad_sub_optimizer
+::: l2co_optimizers.GradientParts
 
-::: l2co_optimizers.pop_sub_optimizer
+::: l2co_optimizers.PopulationParts
 
-::: l2co_optimizers.resolve_popsize
-
-## Handshake policy
-
-::: l2co_optimizers.HandshakePolicy
-
-::: l2co_optimizers.handshake_policy_for
+::: l2co_optimizers.step_fevals
 
 ## State transfer
 

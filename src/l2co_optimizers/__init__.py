@@ -6,14 +6,16 @@ registry and :class:`UpdateClass` every factory returns -- with the run
 loop as its methods (``init_state``, ``run``, ``batch_run``) and the
 state that loop threads (:class:`BatchState`, :class:`HistoryState`) --
 the :class:`OptimizationStep` spec the Hydra configs instantiate, the
-optimizer contract types, the per-library registries, and the
-strategy-facing layer (``SubOpt``, handshake policy, state transfer, menu
-evaluation) that meta-optimizers dispatch through, and :class:`RunState`
-with its ``reset`` / ``run`` / ``batch_evaluate`` entry points, which
-build a run from a resolved ``UpdateClass``. Meta-optimization
-strategies themselves, and ``HistoryState``'s xarray/``DataLoader``
-exports, live in ``l2co``
-(l2co ADR 0017). The layout of this namespace is documented in
+optimizer contract types, the per-library registries, what each
+optimizer exposes to a loop that switches between optimizers (its state
+transfer ports, and :func:`optimizer_parts`, which unpacks it into an
+optax transform or an ``(init, ask, tell)`` triple), and
+:class:`RunState` with its ``reset`` / ``run`` / ``batch_evaluate``
+entry points, which build a run from a resolved ``UpdateClass``. The
+switching layer itself (``SubOpt``, the handshake policy, menu
+evaluation; l2co ADR 0019), meta-optimization strategies, and
+``HistoryState``'s xarray/``DataLoader`` exports (l2co ADR 0017) live in
+``l2co``. The layout of this namespace is documented in
 ``docs/api.md``.
 
 There is no task here. A factory takes ``model``, ``loss_fn`` and
@@ -30,18 +32,11 @@ from l2co_optimizers._src.core.batching import BatchState
 from l2co_optimizers._src.core.experimentdata import (
     create_schedules_experimentdata,
 )
-from l2co_optimizers._src.core.handshake_policy import (
-    DEFAULT_HANDSHAKE_POLICY,
-    HANDSHAKE_POLICY,
-    HandshakePolicy,
-    handshake_policy_for,
-    population_best,
-    population_best_one,
-)
 from l2co_optimizers._src.core.history_state import HistoryState
 from l2co_optimizers._src.core.loss import (
     vmapped_loss,
     vmapped_loss_and_grad,
+    vmapped_loss_and_grad_with_rng,
     vmapped_loss_with_rng,
 )
 from l2co_optimizers._src.core.model_evaluation import evaluate
@@ -108,21 +103,18 @@ from l2co_optimizers._src.mapping import (
     optimizers,
     register_optimizer,
 )
-from l2co_optimizers._src.menu_eval import menu_loss_and_grad
 from l2co_optimizers._src.optax_implementations import (
     normalized_optax_normal,
     optax_mapping,
+    step_fevals,
+)
+from l2co_optimizers._src.optimizer_parts import (
+    GradientParts,
+    PopulationParts,
+    optimizer_parts,
 )
 from l2co_optimizers._src.rbf_trust_region import rbf_trust_region_mapping
 from l2co_optimizers._src.shade import shade_mapping, shade_update
-from l2co_optimizers._src.sub_optimizer import (
-    CONSTRUCTOR_HYPERPARAMETERS,
-    SubOpt,
-    grad_sub_optimizer,
-    optstep_to_subopt,
-    pop_sub_optimizer,
-    resolve_popsize,
-)
 from l2co_optimizers._src.turbo import turbo_mapping
 
 #                                                          Authorship & Credits
@@ -137,17 +129,14 @@ __all__ = [
     "CONF_ABSENT",
     "CONF_ESTIMATED",
     "CONF_EXACT",
-    "CONSTRUCTOR_HYPERPARAMETERS",
-    "DEFAULT_HANDSHAKE_POLICY",
     "FAMILIES",
     "FAMILY_DISTRIBUTION",
     "FAMILY_GRADIENT",
     "FAMILY_POPULATION",
-    "HANDSHAKE_POLICY",
     "AskFunction",
     "BatchState",
     "Carry",
-    "HandshakePolicy",
+    "GradientParts",
     "HistoryState",
     "InitFunction",
     "InputParameters",
@@ -157,13 +146,13 @@ __all__ = [
     "OptState",
     "OptimizationStep",
     "PopSize",
+    "PopulationParts",
     "RecentHistory",
     "RunResult",
     "RunState",
     "SamplerFunction",
     "StepFunction",
     "StopFunction",
-    "SubOpt",
     "TransferBundle",
     "TransferReadFunction",
     "TransferWriteFunction",
@@ -176,35 +165,30 @@ __all__ = [
     "create_schedules_experimentdata",
     "evaluate",
     "get_sampler",
-    "grad_sub_optimizer",
     "grid_sampling",
-    "handshake_policy_for",
     "lbfgs_mapping",
-    "menu_loss_and_grad",
     "normal_sampling",
     "normalize_key",
     "normalized_evosax",
     "normalized_optax_normal",
     "optax_mapping",
     "optimizer_mapping",
+    "optimizer_parts",
     "optimizers",
-    "optstep_to_subopt",
-    "pop_sub_optimizer",
-    "population_best",
-    "population_best_one",
     "random_sampling",
     "rbf_trust_region_mapping",
     "register_optimizer",
     "register_schedule_namer",
     "reset",
-    "resolve_popsize",
     "run",
     "shade_mapping",
     "shade_popsize",
     "shade_update",
+    "step_fevals",
     "turbo_mapping",
     "vmapped_loss",
     "vmapped_loss_and_grad",
+    "vmapped_loss_and_grad_with_rng",
     "vmapped_loss_with_rng",
     "xavier_sampling",
 ]

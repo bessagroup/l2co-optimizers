@@ -10,10 +10,12 @@ importing it loads neither ``l2co`` nor ``l2co_tasks``.
 # =============================================================================
 
 # Standard
+import ast
 import importlib
 import inspect
 import subprocess
 import sys
+from pathlib import Path
 
 # Third-party
 import pytest
@@ -56,21 +58,12 @@ def test_all_symbols_are_importable():
         ("vmapped_loss", "l2co_optimizers._src.core.loss"),
         ("vmapped_loss_and_grad", "l2co_optimizers._src.core.loss"),
         ("vmapped_loss_with_rng", "l2co_optimizers._src.core.loss"),
-        # Sub-optimizer primitives
-        ("SubOpt", "l2co_optimizers._src.sub_optimizer"),
-        ("optstep_to_subopt", "l2co_optimizers._src.sub_optimizer"),
-        ("grad_sub_optimizer", "l2co_optimizers._src.sub_optimizer"),
-        ("pop_sub_optimizer", "l2co_optimizers._src.sub_optimizer"),
-        ("resolve_popsize", "l2co_optimizers._src.sub_optimizer"),
-        ("CONSTRUCTOR_HYPERPARAMETERS", "l2co_optimizers._src.sub_optimizer"),
-        # Handshake policy (docs/adr/0009)
-        ("HandshakePolicy", "l2co_optimizers._src.core.handshake_policy"),
-        ("HANDSHAKE_POLICY", "l2co_optimizers._src.core.handshake_policy"),
-        (
-            "DEFAULT_HANDSHAKE_POLICY",
-            "l2co_optimizers._src.core.handshake_policy",
-        ),
-        ("handshake_policy_for", "l2co_optimizers._src.core.handshake_policy"),
+        ("vmapped_loss_and_grad_with_rng", "l2co_optimizers._src.core.loss"),
+        # What a switching loop drives (l2co ADR 0019)
+        ("optimizer_parts", "l2co_optimizers._src.optimizer_parts"),
+        ("GradientParts", "l2co_optimizers._src.optimizer_parts"),
+        ("PopulationParts", "l2co_optimizers._src.optimizer_parts"),
+        ("step_fevals", "l2co_optimizers._src.optax_implementations"),
         # Base optimizer factories / registries
         (
             "normalized_optax_normal",
@@ -175,3 +168,46 @@ def test_no_public_callable_takes_a_task():
         if "task" in params:
             offenders.append(qualname)
     assert offenders == [], f"take a task: {offenders}"
+
+
+# The switching layer moved to l2co (l2co ADR 0019). What an optimizer
+# exposes to it -- state-transfer ports, ``optimizer_parts`` -- stays;
+# deciding a handshake or dispatching a menu does not come back.
+SWITCHING_LAYER = frozenset(
+    {
+        "SubOpt",
+        "grad_sub_optimizer",
+        "pop_sub_optimizer",
+        "optstep_to_subopt",
+        "menu_loss_and_grad",
+        "HandshakePolicy",
+        "HANDSHAKE_POLICY",
+        "DEFAULT_HANDSHAKE_POLICY",
+        "POPULATION_HANDSHAKES",
+        "handshake_policy_for",
+        "population_best",
+        "population_best_one",
+    }
+)
+
+
+def test_switching_layer_lives_in_l2co():
+    src = Path(facade.__file__).parent
+    defined = set()
+    for path in src.rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(
+                node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+            ):
+                defined.add((node.name, path.name))
+            elif isinstance(node, ast.Assign):
+                defined.update(
+                    (target.id, path.name)
+                    for target in node.targets
+                    if isinstance(target, ast.Name)
+                )
+    offenders = sorted(
+        f"{name} ({file})" for name, file in defined if name in SWITCHING_LAYER
+    )
+    assert offenders == [], f"switching layer defined here: {offenders}"
+    assert not SWITCHING_LAYER & set(facade.__all__)

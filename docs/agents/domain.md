@@ -16,13 +16,13 @@ If any of these files don't exist, **proceed silently**. Don't flag their absenc
 
 **Most decisions governing this code were taken in l2co**, before the package was extracted from it, and their ADRs stay there (`bessagroup/l2co`, `docs/adr/`). Cite them as "l2co ADR 00NN" — the code already does. Read the relevant ones before changing:
 
-- l2co ADR 0006 / 0008 / 0010 — L-BFGS: per-evaluation noise keys, the stock linesearch on the SubOpt path, one feval billed per linesearch trial.
+- l2co ADR 0006 / 0008 / 0010 — L-BFGS: per-evaluation noise keys, the stock linesearch on the parts / SubOpt path, one feval billed per linesearch trial.
 - l2co ADR 0007 — the optimizer-authoring facade and meta-optimizer self-registration (amended by 0016).
-- l2co ADR 0009 — the shared handshake policy table (`HANDSHAKE_POLICY`).
-- l2co ADR 0011 — per-optimizer evaluation width on the strategy bridge (`menu_loss_and_grad`).
+- l2co ADR 0009 / 0011 — the handshake policy table and per-optimizer evaluation width; both now live in l2co.
 - l2co ADR 0012 / 0013 / 0014 — state transfer: ask-coupled state, the transfer bundle as an interlingua, own-ask as a per-optimizer property.
 - l2co ADR 0016 — the extraction of this package: what moved, what stayed in l2co.
 - l2co ADR 0018 — the task stops at l2co: no task type here, factories take `model` / `loss_fn` / `pass_rng`, meta-optimizers register with l2co.
+- l2co ADR 0019 — the switching layer (`SubOpt`, handshake policy, menu evaluation) lives in l2co; this package keeps the transfer ports and `optimizer_parts`.
 
 New decisions that concern only this package get their own ADRs here, numbered from 0001.
 

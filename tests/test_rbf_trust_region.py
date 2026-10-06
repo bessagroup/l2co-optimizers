@@ -211,7 +211,7 @@ def test_the_registry_resolves_every_spelling_of_the_name() -> None:
     """Both lookup paths must agree on how a name is keyed.
 
     ``RunState.init`` resolves the raw name a config wrote;
-    ``sub_optimizer.resolve_popsize`` resolves one already put through
+    ``optimizer_parts.resolve_popsize`` resolves one already put through
     ``normalize_key``, which strips underscores. Storing the key raw made
     this optimizer usable directly but not as a meta-optimizer sub-step,
     and that failed at run time -- 768 cells into a campaign -- rather

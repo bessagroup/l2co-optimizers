@@ -1,6 +1,7 @@
 """What one optimizer can hand the next when control passes to it.
 
-The handshake in :mod:`~l2co_optimizers._src.core.handshake_policy` answers
+The handshake -- l2co's handshake policy (l2co ADR 0009), which lives
+with the rest of the switching layer in l2co (l2co ADR 0019) -- answers
 *which population* the incoming optimizer sees and *whether* its internal
 state survives. It carries no information **out of** the outgoing
 optimizer: the incoming one is handed a point and, at best, told to keep
