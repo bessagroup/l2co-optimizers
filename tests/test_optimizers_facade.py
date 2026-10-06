@@ -59,6 +59,8 @@ def test_all_symbols_are_importable():
         # Sub-optimizer primitives
         ("SubOpt", "l2co_optimizers._src.sub_optimizer"),
         ("optstep_to_subopt", "l2co_optimizers._src.sub_optimizer"),
+        ("grad_sub_optimizer", "l2co_optimizers._src.sub_optimizer"),
+        ("pop_sub_optimizer", "l2co_optimizers._src.sub_optimizer"),
         ("resolve_popsize", "l2co_optimizers._src.sub_optimizer"),
         ("CONSTRUCTOR_HYPERPARAMETERS", "l2co_optimizers._src.sub_optimizer"),
         # Handshake policy (docs/adr/0009)

@@ -90,6 +90,10 @@ The run loop is a set of [`UpdateClass`](#l2co_optimizers.UpdateClass) methods (
 
 ::: l2co_optimizers.optstep_to_subopt
 
+::: l2co_optimizers.grad_sub_optimizer
+
+::: l2co_optimizers.pop_sub_optimizer
+
 ::: l2co_optimizers.resolve_popsize
 
 ## Handshake policy

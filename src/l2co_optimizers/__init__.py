@@ -98,7 +98,9 @@ from l2co_optimizers._src.state_transfer import (
 from l2co_optimizers._src.sub_optimizer import (
     CONSTRUCTOR_HYPERPARAMETERS,
     SubOpt,
+    grad_sub_optimizer,
     optstep_to_subopt,
+    pop_sub_optimizer,
     resolve_popsize,
 )
 from l2co_optimizers._src.turbo import turbo_mapping
@@ -174,6 +176,7 @@ __all__ = [
     "create_schedules_experimentdata",
     "evaluate",
     "get_sampler",
+    "grad_sub_optimizer",
     "grid_sampling",
     "handshake_policy_for",
     "lbfgs_mapping",
@@ -186,6 +189,7 @@ __all__ = [
     "optimizer_mapping",
     "optimizers",
     "optstep_to_subopt",
+    "pop_sub_optimizer",
     "population_best",
     "population_best_one",
     "random_sampling",
