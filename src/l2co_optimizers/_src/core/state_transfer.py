@@ -1,6 +1,6 @@
 """What one optimizer can hand the next when control passes to it.
 
-The handshake in :mod:`~l2co_optimizers._src.handshake_policy` answers
+The handshake in :mod:`~l2co_optimizers._src.core.handshake_policy` answers
 *which population* the incoming optimizer sees and *whether* its internal
 state survives. It carries no information **out of** the outgoing
 optimizer: the incoming one is handed a point and, at best, told to keep
@@ -90,7 +90,7 @@ import optax
 from jaxtyping import Array, Bool, Float, PyTree
 
 # Local
-from l2co_optimizers._src.typing import (
+from l2co_optimizers._src.core.typing import (
     TransferReadFunction,
     TransferWriteFunction,
 )
@@ -1269,7 +1269,7 @@ def transfer_spec_for(name: str, family: str) -> TransferSpec:
     ----------
     name : str
         Registry name, normalised as in
-        :func:`~l2co_optimizers._src.utils.normalize_key`.
+        :func:`~l2co_optimizers._src.core.utils.normalize_key`.
     family : str
         One of :data:`FAMILIES`, supplied by the constructing factory,
         which knows which family it is building. Not inferred from

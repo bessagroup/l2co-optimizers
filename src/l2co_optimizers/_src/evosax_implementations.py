@@ -6,12 +6,12 @@ The closure factories ``evosax_distribution_based_fn`` /
 for an EvoSax algorithm, and ``evosax_ask_fn`` exposes its sampling step
 for a handshake. The ``UpdateClass`` factories
 ``evosax_distribution_update`` / ``evosax_population_update`` wrap them
-into an :class:`~l2co_optimizers._src.update_class.UpdateClass`. The
+into an :class:`~l2co_optimizers._src.core.update_class.UpdateClass`. The
 registry binds each EvoSax algorithm directly to the appropriate factory
 via :class:`jax.tree_util.Partial`. Population size defaults to
-:func:`l2co_optimizers._src.popsize.variable_popsize` on each factory,
+:func:`l2co_optimizers._src.core.popsize.variable_popsize` on each factory,
 except for the algorithms in :data:`_EVEN_POPSIZE_REQUIRED`, which are
-bound to :func:`l2co_optimizers._src.popsize.variable_popsize_even`
+bound to :func:`l2co_optimizers._src.core.popsize.variable_popsize_even`
 because they require an even population size. The caller can override
 either default by supplying ``popsize`` in the ``OptimizationStep``
 hyperparameters.
@@ -41,23 +41,23 @@ from jax.tree_util import Partial
 from jaxtyping import PRNGKeyArray, PyTree
 
 # Local
-from l2co_optimizers._src.loss import (
+from l2co_optimizers._src.core.loss import (
     vmapped_loss,
     vmapped_loss_with_rng,
 )
-from l2co_optimizers._src.opt_history import OptHistory
-from l2co_optimizers._src.popsize import (
+from l2co_optimizers._src.core.opt_history import OptHistory
+from l2co_optimizers._src.core.popsize import (
     resolve_popsize,
     variable_popsize,
     variable_popsize_even,
 )
-from l2co_optimizers._src.state_transfer import (
+from l2co_optimizers._src.core.state_transfer import (
     FAMILY_DISTRIBUTION,
     FAMILY_POPULATION,
     build_transfer_fns,
     transfer_spec_for,
 )
-from l2co_optimizers._src.typing import (
+from l2co_optimizers._src.core.typing import (
     AskFunction,
     InitFunction,
     InputParameters,
@@ -66,8 +66,8 @@ from l2co_optimizers._src.typing import (
     StepFunction,
     StopFunction,
 )
-from l2co_optimizers._src.update_class import UpdateClass
-from l2co_optimizers._src.utils import normalize_key
+from l2co_optimizers._src.core.update_class import UpdateClass
+from l2co_optimizers._src.core.utils import normalize_key
 
 #                                                          Authorship & Credits
 # =============================================================================
@@ -397,7 +397,7 @@ def evosax_distribution_update(
     name : str, optional
         Registry name, used only to resolve this optimizer's
         state-transfer overrides
-        (:data:`~l2co_optimizers._src.state_transfer.TRANSFER_OVERRIDES`).
+        (:data:`~l2co_optimizers._src.core.state_transfer.TRANSFER_OVERRIDES`).
         Declared explicitly rather than left to
         ``**hyperparameters`` so it is never forwarded to the
         underlying constructor. Defaults to ``""``, which resolves
@@ -489,7 +489,7 @@ def evosax_population_update(
     name : str, optional
         Registry name, used only to resolve this optimizer's
         state-transfer overrides
-        (:data:`~l2co_optimizers._src.state_transfer.TRANSFER_OVERRIDES`).
+        (:data:`~l2co_optimizers._src.core.state_transfer.TRANSFER_OVERRIDES`).
         Declared explicitly rather than left to
         ``**hyperparameters`` so it is never forwarded to the
         underlying constructor. Defaults to ``""``, which resolves

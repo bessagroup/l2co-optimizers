@@ -31,13 +31,13 @@ from jax_tqdm import scan_tqdm
 from jaxtyping import Array, Float, PRNGKeyArray, PyTree
 
 # Local
-from l2co_optimizers._src.batching import BatchState
-from l2co_optimizers._src.history_state import HistoryState
-from l2co_optimizers._src.opt_history import OptHistory, RecentHistory
-from l2co_optimizers._src.state_transfer import (
+from l2co_optimizers._src.core.batching import BatchState
+from l2co_optimizers._src.core.history_state import HistoryState
+from l2co_optimizers._src.core.opt_history import OptHistory, RecentHistory
+from l2co_optimizers._src.core.state_transfer import (
     FAMILY_GRADIENT,
 )
-from l2co_optimizers._src.typing import (
+from l2co_optimizers._src.core.typing import (
     AskFunction,
     Carry,
     InitFunction,
@@ -115,7 +115,7 @@ class UpdateClass(eqx.Module):
         ``max_iterations * max(popsize)``.
     family : str
         Which optimizer family this is, one of
-        :data:`~l2co_optimizers._src.state_transfer.FAMILIES`. Set by
+        :data:`~l2co_optimizers._src.core.state_transfer.FAMILIES`. Set by
         the constructing factory, which knows what it is building --
         *not* inferred from evosax registry membership, which
         ``FEEDBACK_evosax.md`` records as a source of friction. Says
@@ -126,7 +126,7 @@ class UpdateClass(eqx.Module):
         ``ask_fn(opt_state, key) -> (params, opt_state)`` -- the
         optimizer's own sampling step, bounds-clipped like
         :attr:`step_fn`. Present when
-        :attr:`~l2co_optimizers._src.state_transfer.TransferSpec.own_ask`
+        :attr:`~l2co_optimizers._src.core.state_transfer.TransferSpec.own_ask`
         is set, which is every ``"distribution"`` optimizer and the
         mutation GAs; ``None`` (default) otherwise. A switching caller
         that finds it set must draw the post-switch population from it
@@ -147,10 +147,10 @@ class UpdateClass(eqx.Module):
         ``UpdateClass``.
     transfer_write_fn : TransferWriteFunction or None
         ``transfer_write_fn(bundle, opt_state) -> opt_state`` -- folds a
-        :class:`~l2co_optimizers._src.state_transfer.TransferBundle`
+        :class:`~l2co_optimizers._src.core.state_transfer.TransferBundle`
         into this optimizer's own state. Same convention: a
         non-receiver such as L-BFGS gets
-        :func:`~l2co_optimizers._src.state_transfer.write_none`, an
+        :func:`~l2co_optimizers._src.core.state_transfer.write_none`, an
         identity, rather than ``None``. Both halves are bound at
         construction because they need hyperparameters the state does
         not retain -- the learning rate, Rprop's clip bounds, the ravel

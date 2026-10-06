@@ -1,7 +1,7 @@
 """Population-size defaults and resolution for optimizer factories.
 
 A factory's ``popsize`` argument is a
-:data:`~l2co_optimizers._src.typing.PopSize`: either a literal ``int``
+:data:`~l2co_optimizers._src.core.typing.PopSize`: either a literal ``int``
 or a callable deriving one from the problem dimensionality. The
 callables here are the built-in defaults, and :func:`resolve_popsize`
 turns either form into a concrete ``int``.
@@ -20,7 +20,7 @@ import jax.tree_util as jtu
 from jaxtyping import PyTree
 
 # Local
-from l2co_optimizers._src.typing import PopSize
+from l2co_optimizers._src.core.typing import PopSize
 
 #                                                          Authorship & Credits
 # =============================================================================

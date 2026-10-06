@@ -20,19 +20,19 @@ from jax.tree_util import Partial
 from jaxtyping import PRNGKeyArray, PyTree
 
 # Local
-from l2co_optimizers._src.batching import BatchState
-from l2co_optimizers._src.history_state import HistoryState
-from l2co_optimizers._src.loss import vmapped_loss, vmapped_loss_with_rng
-from l2co_optimizers._src.popsize import resolve_popsize
-from l2co_optimizers._src.sampler import get_sampler
-from l2co_optimizers._src.state_transfer import FAMILY_POPULATION
-from l2co_optimizers._src.typing import (
+from l2co_optimizers._src.core.batching import BatchState
+from l2co_optimizers._src.core.history_state import HistoryState
+from l2co_optimizers._src.core.loss import vmapped_loss, vmapped_loss_with_rng
+from l2co_optimizers._src.core.popsize import resolve_popsize
+from l2co_optimizers._src.core.sampler import get_sampler
+from l2co_optimizers._src.core.state_transfer import FAMILY_POPULATION
+from l2co_optimizers._src.core.typing import (
     InputParameters,
     LossFunction,
     PopSize,
     StopFunction,
 )
-from l2co_optimizers._src.update_class import RunResult, UpdateClass
+from l2co_optimizers._src.core.update_class import RunResult, UpdateClass
 
 #                                                          Authorship & Credits
 # =============================================================================
@@ -443,14 +443,14 @@ def random_search_update(
         need no special case.
     sampler : str, optional
         Name of the sampler used to draw candidates, resolved via
-        :func:`l2co_optimizers._src.sampler.get_sampler`. Must accept ``(key,
-        params, n_samples, ...)`` -- i.e. ``"random"``, ``"normal"``,
+        :func:`l2co_optimizers._src.core.sampler.get_sampler`. Must accept
+        ``(key, params, n_samples, ...)`` -- i.e. ``"random"``, ``"normal"``,
         ``"xavier"``, or ``"constant"``. Default ``"random"``.
     popsize : int or Callable[[int], int], optional
         Candidates per logical iteration; total evaluations per
         ``step`` call equal ``popsize * n_iterations``. Either a
         literal integer or a callable taking the ``Task`` (e.g.
-        :func:`l2co_optimizers._src.popsize.variable_popsize`).
+        :func:`l2co_optimizers._src.core.popsize.variable_popsize`).
         Default 1.
     **sampler_kwargs : Any
         Forwarded to the underlying sampler (e.g. ``lower_bound`` /

@@ -5,7 +5,7 @@ The closure factories ``optax_fn`` / ``optax_extra_kwargs_fn`` build the
 ``(init_fn, step_fn)`` pairs for an optax optimizer, and ``step_fevals``
 is the feval count they bill. The ``UpdateClass`` factories
 ``optax_update`` / ``optax_update_extra_kwargs`` wrap them into an
-:class:`~l2co_optimizers._src.update_class.UpdateClass`. The registry
+:class:`~l2co_optimizers._src.core.update_class.UpdateClass`. The registry
 binds each optimizer name to the appropriate factory via
 :class:`jax.tree_util.Partial`. The caller is responsible for supplying
 every hyperparameter the underlying optax constructor needs (e.g.
@@ -31,24 +31,24 @@ from jaxtyping import PRNGKeyArray, PyTree
 from optax import OptState as OptaxState
 
 # Local
-from l2co_optimizers._src.loss import (
+from l2co_optimizers._src.core.loss import (
     vmapped_loss_and_grad,
     vmapped_loss_and_grad_with_rng,
 )
-from l2co_optimizers._src.opt_history import OptHistory
-from l2co_optimizers._src.state_transfer import (
+from l2co_optimizers._src.core.opt_history import OptHistory
+from l2co_optimizers._src.core.state_transfer import (
     FAMILY_GRADIENT,
     build_transfer_fns,
 )
-from l2co_optimizers._src.typing import (
+from l2co_optimizers._src.core.typing import (
     InitFunction,
     InputParameters,
     LossFunction,
     StepFunction,
     StopFunction,
 )
-from l2co_optimizers._src.update_class import UpdateClass
-from l2co_optimizers._src.utils import (
+from l2co_optimizers._src.core.update_class import UpdateClass
+from l2co_optimizers._src.core.utils import (
     normalize_key,
 )
 
@@ -364,7 +364,7 @@ def optax_update(
     name : str, optional
         Registry name, used only to resolve this optimizer's
         state-transfer overrides
-        (:data:`~l2co_optimizers._src.state_transfer.TRANSFER_OVERRIDES`).
+        (:data:`~l2co_optimizers._src.core.state_transfer.TRANSFER_OVERRIDES`).
         Declared explicitly rather than left to
         ``**hyperparameters`` so it is never forwarded to the
         underlying constructor. Defaults to ``""``, which resolves
@@ -446,7 +446,7 @@ def optax_update_extra_kwargs(
     name : str, optional
         Registry name, used only to resolve this optimizer's
         state-transfer overrides
-        (:data:`~l2co_optimizers._src.state_transfer.TRANSFER_OVERRIDES`).
+        (:data:`~l2co_optimizers._src.core.state_transfer.TRANSFER_OVERRIDES`).
         Declared explicitly rather than left to
         ``**hyperparameters`` so it is never forwarded to the
         underlying constructor. Defaults to ``""``, which resolves

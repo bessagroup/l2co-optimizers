@@ -25,7 +25,7 @@ import numpy as np
 
 # Local
 from l2co_optimizers import HistoryState, OptHistory
-from l2co_optimizers._src.update_class import _reduce_entry, _update_best
+from l2co_optimizers._src.core.update_class import _reduce_entry, _update_best
 
 #                                                          Authorship & Credits
 # =============================================================================

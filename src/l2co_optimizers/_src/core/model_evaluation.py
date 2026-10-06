@@ -21,7 +21,7 @@ import jax
 from jaxtyping import PRNGKeyArray, PyTree
 
 # Local
-from l2co_optimizers._src.batching import BatchState
+from l2co_optimizers._src.core.batching import BatchState
 
 #                                                          Authorship & Credits
 # =============================================================================

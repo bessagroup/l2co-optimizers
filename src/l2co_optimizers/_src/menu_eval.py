@@ -75,13 +75,13 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float, Int, PRNGKeyArray, PyTree
 
 # Local
-from l2co_optimizers._src.loss import (
+from l2co_optimizers._src.core.loss import (
     vmapped_loss,
     vmapped_loss_and_grad,
     vmapped_loss_and_grad_with_rng,
     vmapped_loss_with_rng,
 )
-from l2co_optimizers._src.typing import LossFunction
+from l2co_optimizers._src.core.typing import LossFunction
 
 if TYPE_CHECKING:
     from l2co_optimizers._src.sub_optimizer import SubOpt

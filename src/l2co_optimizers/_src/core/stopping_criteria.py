@@ -19,7 +19,7 @@ from jaxtyping import Array, Bool, PyTree
 
 # Local
 if TYPE_CHECKING:
-    from l2co_optimizers._src.opt_history import RecentHistory
+    from l2co_optimizers._src.core.opt_history import RecentHistory
 
 #                                                          Authorship & Credits
 # =============================================================================

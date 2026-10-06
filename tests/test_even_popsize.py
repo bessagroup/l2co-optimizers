@@ -16,13 +16,13 @@ default population size is never odd (``variable_popsize`` is odd whenever
 import pytest
 
 # Local
+from l2co_optimizers._src.core.popsize import (
+    variable_popsize,
+    variable_popsize_even,
+)
 from l2co_optimizers._src.evosax_implementations import (
     _EVEN_POPSIZE_REQUIRED,
     evosax_mapping,
-)
-from l2co_optimizers._src.popsize import (
-    variable_popsize,
-    variable_popsize_even,
 )
 
 #                                                          Authorship & Credits

@@ -20,8 +20,8 @@ from typing import Any
 from jax.tree_util import Partial
 
 # Local
-from l2co_optimizers._src.stopping_criteria import STOPPING_CRITERIA
-from l2co_optimizers._src.typing import StopFunction
+from l2co_optimizers._src.core.stopping_criteria import STOPPING_CRITERIA
+from l2co_optimizers._src.core.typing import StopFunction
 
 #                                                          Authorship & Credits
 # =============================================================================

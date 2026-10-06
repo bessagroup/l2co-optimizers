@@ -73,7 +73,7 @@ from l2co_optimizers import (
     build_transfer_fns,
 )
 from l2co_optimizers import optimizers as REGISTRY
-from l2co_optimizers._src.state_transfer import (
+from l2co_optimizers._src.core.state_transfer import (
     TRANSFER_OVERRIDES,
     transfer_spec_for,
 )

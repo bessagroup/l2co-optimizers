@@ -7,6 +7,8 @@
 from collections.abc import Callable
 
 # Local
+from l2co_optimizers._src.core.update_class import UpdateClass
+from l2co_optimizers._src.core.utils import normalize_key
 from l2co_optimizers._src.evosax_implementations import evosax_mapping
 from l2co_optimizers._src.lbfgs import lbfgs_mapping
 from l2co_optimizers._src.optax_implementations import optax_mapping
@@ -14,8 +16,6 @@ from l2co_optimizers._src.random_search import random_search_mapping
 from l2co_optimizers._src.rbf_trust_region import rbf_trust_region_mapping
 from l2co_optimizers._src.shade import shade_mapping
 from l2co_optimizers._src.turbo import turbo_mapping
-from l2co_optimizers._src.update_class import UpdateClass
-from l2co_optimizers._src.utils import normalize_key
 
 #                                                          Authorship & Credits
 # =============================================================================
@@ -35,7 +35,7 @@ __status__ = "Stable"
 # Keeping this back-edge out of the optimizers subpackage is what breaks the
 # ``l2co_update -> strategy_wrapper -> sub_optimizer`` import cycle — see
 # ``l2co ADR 0007``.
-#: Registry keys are stored under :func:`~l2co_optimizers._src.utils.
+#: Registry keys are stored under :func:`~l2co_optimizers._src.core.utils.
 #: normalize_key`, which strips non-alphanumerics and lowercases. Both
 #: lookup paths must agree on this: ``RunState.init`` resolves the raw
 #: name a config wrote, while ``sub_optimizer.resolve_popsize`` resolves
