@@ -41,6 +41,8 @@ make docs            # uv run mkdocs build
 
 The git hook calls `pre-commit`, which is not on PATH in the devcontainer. Run `uv run --with pre-commit pre-commit run`, then `git commit --no-verify`.
 
+**Releases are automated** (`.github/workflows/release.yml`, `patrick-kidger/action_update_python_project`). On every push to `main`, if the `pyproject.toml` version is newer than PyPI's, it builds, runs the tests against the sdist and the wheel (f3dasm from PyPI, via `--no-sources`), uploads to PyPI, then pushes the `v<version>` tag and creates the GitHub release. To release, bump `version` in `pyproject.toml` and `CITATION.cff` on `develop`, then merge `develop` into `main`. Never tag or `gh release create` by hand: the action's tag push fails on an existing tag, *after* the PyPI upload.
+
 ## Architecture
 
 - **`_src` layout:** `_src/core/` holds everything optimizer-agnostic — contract types (`typing`), `UpdateClass` and its run loop, `opt_history`, `history_state`, `batching`, `run_state`, `model_evaluation`, `loss`, `popsize`, `sampler`, `stopping_criteria`, `optimizer_schedule`, `experimentdata`, `utils`, `state_transfer`. `_src/` itself holds the optimizer implementations (`optax_implementations`, `evosax_implementations`, `lbfgs`, `shade`, `turbo`, `rbf_trust_region`, `random_search`) and the modules that must see all of them (`mapping` — the registry, and `optimizer_parts`). **`core` never imports from outside `core`**; `tests/test_core_layering.py` enforces it, including `TYPE_CHECKING` and function-local imports. A new module goes in `core/` only if it names no specific optimizer.
