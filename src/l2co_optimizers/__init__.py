@@ -2,13 +2,15 @@
 L2CO Optimizers - bare optimizers compatible with the L2CO library.
 
 The single public surface for using and *authoring* optimizers: the name
-registry and :class:`UpdateClass` container every factory returns, the
-:class:`OptimizationStep` spec the Hydra configs instantiate, the
+registry and :class:`UpdateClass` every factory returns -- with the run
+loop as its methods (``init_state``, ``run``, ``batch_run``) and the
+state that loop threads (:class:`BatchState`, :class:`HistoryState`) --
+the :class:`OptimizationStep` spec the Hydra configs instantiate, the
 optimizer contract types, the per-library registries, and the
 strategy-facing layer (``SubOpt``, handshake policy, state transfer, menu
 evaluation) that meta-optimizers dispatch through. Meta-optimization
-strategies themselves, and the loop that runs an optimizer on a task,
-live in ``l2co``. The layout of this namespace is documented in
+strategies themselves, and the bridge that builds a run from a task,
+live in ``l2co`` (l2co ADR 0017). The layout of this namespace is documented in
 ``docs/api.md``.
 
 Tasks reach this package only through :class:`TaskLike`, a structural
@@ -19,6 +21,7 @@ other.
 #                                                                       Modules
 # =============================================================================
 
+from l2co_optimizers._src.batching import BatchState
 from l2co_optimizers._src.evosax_implementations import (
     evosax_distribution_update,
     evosax_mapping,
@@ -40,6 +43,7 @@ from l2co_optimizers._src.handshake_policy import (
     population_best_one,
     population_handshake_for,
 )
+from l2co_optimizers._src.history_state import HistoryState
 from l2co_optimizers._src.lbfgs import (
     lbfgs_mapping,
     lbfgs_per_eval_key,
@@ -134,6 +138,7 @@ from l2co_optimizers._src.sub_optimizer import (
 from l2co_optimizers._src.turbo import turbo_mapping
 from l2co_optimizers._src.typing import (
     AskFunction,
+    Carry,
     InitFunction,
     InputParameters,
     LossFunction,
@@ -148,6 +153,7 @@ from l2co_optimizers._src.typing import (
     TransferWriteFunction,
 )
 from l2co_optimizers._src.update_class import (
+    RunResult,
     UpdateClass,
 )
 
@@ -161,10 +167,12 @@ __status__ = "Stable"
 __all__ = [
     "ALIAS_HYPERPARAMETER",
     "AskFunction",
+    "BatchState",
     "CONF_ABSENT",
     "CONF_ESTIMATED",
     "CONF_EXACT",
     "CONSTRUCTOR_HYPERPARAMETERS",
+    "Carry",
     "DEFAULT_HANDSHAKE_POLICY",
     "FAMILIES",
     "FAMILY_DISTRIBUTION",
@@ -173,6 +181,7 @@ __all__ = [
     "GRAD_EVALUATION_WIDTH",
     "HANDSHAKE_POLICY",
     "HandshakePolicy",
+    "HistoryState",
     "InitFunction",
     "InputParameters",
     "LINESEARCH_FEVAL_BOUND",
@@ -187,6 +196,7 @@ __all__ = [
     "PopSize",
     "RandomSearchUpdateClass",
     "RecentHistory",
+    "RunResult",
     "SHADE",
     "STOPPING_CRITERIA",
     "SamplerFunction",

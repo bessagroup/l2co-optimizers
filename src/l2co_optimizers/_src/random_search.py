@@ -15,13 +15,16 @@ from typing import Any
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import jax.random as jr
 from jax.tree_util import Partial
 from jaxtyping import PRNGKeyArray, PyTree
 
+# Local
+from l2co_optimizers._src.batching import BatchState
+from l2co_optimizers._src.history_state import HistoryState
+from l2co_optimizers._src.loss import vmapped_loss, vmapped_loss_with_rng
 from l2co_optimizers._src.popsize import resolve_popsize
 from l2co_optimizers._src.sampler import get_sampler
-
-# Local
 from l2co_optimizers._src.state_transfer import FAMILY_POPULATION
 from l2co_optimizers._src.typing import (
     InputParameters,
@@ -29,7 +32,7 @@ from l2co_optimizers._src.typing import (
     StopFunction,
     TaskLike,
 )
-from l2co_optimizers._src.update_class import UpdateClass
+from l2co_optimizers._src.update_class import RunResult, UpdateClass
 
 #                                                          Authorship & Credits
 # =============================================================================
@@ -38,23 +41,43 @@ __credits__ = ["Martin van der Schelling"]
 __status__ = "Stable"
 # =============================================================================
 
+# Target number of candidates per random-search chunk. Peak memory for a
+# chunk is roughly this many rows times the parameter dimension, times a
+# small constant for the RNG generation. ~1e5 keeps a 1024-dim chunk well
+# under 1 GiB while staying large enough that the per-chunk vectorised
+# evaluation is efficient.
+_RS_CHUNK_TARGET_CANDIDATES = 100_000
+
+
+def _rs_chunking(n_iterations: int, popsize: int) -> tuple[int, int]:
+    """Pick ``(n_chunks, chunk_iters)`` for chunked random search.
+
+    Splits the ``n_iterations`` logical iterations into ``n_chunks``
+    balanced chunks of ``chunk_iters`` iterations each such that a chunk
+    holds about :data:`_RS_CHUNK_TARGET_CANDIDATES` candidates. Both
+    values are static (``n_iterations``/``popsize`` are Python ints), so
+    they fix shapes at trace time. ``n_chunks * chunk_iters`` may slightly
+    exceed ``n_iterations`` (by fewer than ``n_chunks`` iterations); the
+    caller masks/drops that padding.
+    """
+    target_iters = max(1, _RS_CHUNK_TARGET_CANDIDATES // max(popsize, 1))
+    n_chunks = max(1, -(-n_iterations // target_iters))  # ceil div
+    chunk_iters = -(-n_iterations // n_chunks)  # ceil div -> balanced
+    return n_chunks, chunk_iters
+
 
 class RandomSearchUpdateClass(UpdateClass):
     """One-shot random-search update class.
 
-    Subclasses :class:`UpdateClass` but stores the extra fields needed
-    by the dedicated runners
-    :func:`l2co._src.update_class.run_randomsearch` and
-    :func:`l2co._src.update_class.batch_run_randomsearch`, which
-    evaluate the entire ``n_iterations * popsize`` candidate set in a
-    single batched call rather than iterating through the scan loop.
-    ``run_state.run`` / ``run_state.batch_run`` dispatch to those
-    runners when they see an instance of this class. ``init_fn`` is a
-    no-op that returns a scalar placeholder -- it is invoked through
-    the generic :func:`l2co._src.update_class.init_` so callers do not
-    need a special initialization path. ``step_fn`` is a no-op as well
-    and is never invoked, since the dedicated runners bypass the scan
-    loop entirely.
+    Subclasses :class:`UpdateClass`, overriding :meth:`run` with a
+    chunked runner that evaluates the ``n_iterations * popsize``
+    candidate set in vectorised chunks rather than iterating through the
+    scan loop, and :meth:`batch_run` to map that runner over
+    realizations one at a time. ``init_fn`` is a no-op that returns a
+    scalar placeholder -- it is invoked through the inherited
+    :meth:`~UpdateClass.init_state` so callers do not need a special
+    initialization path. ``step_fn`` is a no-op as well and is never
+    invoked, since :meth:`run` bypasses the scan loop entirely.
 
     The runner shapes its result to mimic an iterative trajectory:
     ``output_min[i]`` / ``output_mean[i]`` / ``output_std[i]`` are
@@ -104,13 +127,11 @@ class RandomSearchUpdateClass(UpdateClass):
         """Initialise the random-search update class.
 
         ``init_fn`` is a no-op returning a scalar placeholder; it is
-        invoked through the generic :func:`l2co._src.update_class.init_`
+        invoked through the inherited :meth:`~UpdateClass.init_state`
         so the random-search code path needs no special initialization
         helper. ``step_fn`` is a no-op as well and is never invoked --
-        ``run_state.run`` / ``run_state.batch_run`` dispatch to the
-        dedicated runners :func:`l2co._src.update_class.run_randomsearch`
-        / :func:`l2co._src.update_class.batch_run_randomsearch`, which
-        do all the work in a single batched evaluation.
+        the overridden :meth:`run` does all the work in chunked batched
+        evaluations.
 
         Parameters
         ----------
@@ -159,6 +180,225 @@ class RandomSearchUpdateClass(UpdateClass):
         self.loss_fn = loss_fn
         self.pass_rng = pass_rng
         self.bounded = bounded
+
+    def run(
+        self,
+        opt_state: PyTree,
+        params: InputParameters,
+        batch_state: BatchState,
+        dataset: dict[str, jax.Array],
+        key: PRNGKeyArray,
+        n_iterations: int,
+        verbose: bool,
+    ) -> RunResult:
+        """Run random search over the candidate set, one chunk per scan step.
+
+        Draws ``n_iterations * popsize`` independent candidates from
+        :attr:`sampling_fn`, evaluates them via :func:`vmapped_loss` (or
+        :func:`vmapped_loss_with_rng` for stochastic losses), and reports
+        one ``output_min/mean/std`` per logical iteration plus the global
+        best. Rather than materialise and evaluate the whole set at once
+        -- which peaks at several times its own size (``jax.random``
+        uniform generation alone spikes to ~4x the result while producing
+        threefry bits), the cause of out-of-memory failures on
+        high-dimensional tasks -- the candidates are processed in chunks
+        of :func:`_rs_chunking` iterations under a :func:`jax.lax.scan`.
+        Each chunk's candidate array is transient (not part of the scan
+        carry) and freed before the next step, so peak memory is
+        ``O(chunk_iters * popsize * dim)`` independent of the total
+        budget. The scan-loop machinery of :meth:`UpdateClass.run` is
+        still bypassed within a chunk: candidates are independent and
+        evaluated in one vectorised call. Per-iteration reductions and
+        the global best are identical to a single-shot evaluation of the
+        same per-chunk draws.
+
+        Parameters
+        ----------
+        opt_state : PyTree
+            Ignored (random search keeps no state); returned unchanged.
+        params : InputParameters
+            Ignored (each iteration re-samples from scratch).
+        batch_state : BatchState
+            Used to draw one batch; advanced once.
+        dataset : dict[str, jax.Array]
+            Task dataset.
+        key : PRNGKeyArray
+            PRNG key, split into batch / sampling / per-candidate-loss
+            sub-keys.
+        n_iterations : int
+            Number of logical iterations to emit in the trajectory.
+        verbose : bool
+            Ignored.
+
+        Returns
+        -------
+        RunResult
+            ``(final_params, best_params, best_loss, opt_state,
+            batch_state, history_state)`` matching
+            :meth:`UpdateClass.run`.
+        """
+        del params, verbose
+        popsize = self.popsize
+        n_chunks, chunk_iters = _rs_chunking(n_iterations, popsize)
+        padded_iters = n_chunks * chunk_iters  # >= n_iterations
+        chunk_size = chunk_iters * popsize
+
+        batch_key, sample_key, loss_key = jr.split(key, 3)
+
+        # One batch reused for all evaluations.
+        batch_idxs, batch_state = batch_state.next(batch_key)
+        sample = jax.tree.map(lambda x: x[batch_idxs], dataset)
+
+        # Independent per-chunk sampling / loss keys.
+        sample_keys = jr.split(sample_key, n_chunks)
+        loss_keys = jr.split(loss_key, n_chunks)
+
+        # ``bounded`` is a static field, so this is resolved at trace time.
+        # With ``(None, None)`` -- the default for the random-search
+        # baseline -- ``jnp.clip`` is a no-op that still allocates a full
+        # copy of the chunk, so skip it unless a finite bound is set.
+        lo, hi = self.bounded
+        do_clip = lo is not None or hi is not None
+
+        def _chunk(carry, xs):
+            c_idx, s_key, l_key = xs
+
+            candidates = self.sampling_fn(s_key, chunk_size)
+            if do_clip:
+                candidates = jax.tree.map(
+                    lambda p: jnp.clip(p, lo, hi), candidates
+                )
+            combined = eqx.combine(candidates, self.static_model)
+            if self.pass_rng:
+                losses = vmapped_loss_with_rng(
+                    combined,
+                    self.loss_fn,
+                    sample,
+                    jr.split(l_key, chunk_size),
+                )
+            else:
+                losses = vmapped_loss(combined, self.loss_fn, sample)
+
+            # Mask candidates in padded (out-of-range) iterations so they
+            # can neither win the global best nor pollute the trajectory.
+            valid_iter = (
+                c_idx * chunk_iters + jnp.arange(chunk_iters)
+            ) < n_iterations
+            valid_cand = jnp.repeat(valid_iter, popsize)
+            masked = jnp.where(valid_cand, losses, jnp.inf)
+
+            # Per-chunk best (``argmin`` keeps the earliest candidate on
+            # ties).
+            best_idx = jnp.argmin(masked)
+            chunk_best_loss = masked[best_idx]
+            chunk_best_params = jax.tree.map(lambda x: x[best_idx], candidates)
+
+            losses_2d = losses.reshape(chunk_iters, popsize)
+
+            # Population at this chunk's last in-range iteration. Only the
+            # final chunk's value is used downstream, giving the last
+            # logical iteration's ``popsize`` block (matches
+            # ``candidates[-popsize:]`` of the previous one-shot
+            # implementation).
+            last_valid_local = jnp.clip(
+                n_iterations - 1 - c_idx * chunk_iters, 0, chunk_iters - 1
+            )
+            last_pop = jax.tree.map(
+                lambda x: jax.lax.dynamic_slice_in_dim(
+                    x, last_valid_local * popsize, popsize, axis=0
+                ),
+                candidates,
+            )
+            return carry, (
+                losses_2d,
+                last_pop,
+                chunk_best_loss,
+                chunk_best_params,
+            )
+
+        _, (losses_2d_all, last_pops, chunk_best_losses, chunk_best_params) = (
+            jax.lax.scan(
+                _chunk,
+                (),
+                (jnp.arange(n_chunks), sample_keys, loss_keys),
+            )
+        )
+
+        # Reduce the flat candidate losses per logical iteration directly
+        # into the HistoryState (dropping the padded tail). Building an
+        # intermediate ``(n_iter, popsize, dim)`` ``OptHistory`` -- and an
+        # all-NaN ``grads`` array of the same shape -- only to collapse it
+        # via ``from_history`` wastes memory scaling with ``dim``;
+        # random-search candidates carry no NaN padding, so per-iteration
+        # ``nanmin/nanmean/nanstd`` match exactly.
+        losses_2d = losses_2d_all.reshape(padded_iters, popsize)[:n_iterations]
+        history_state = HistoryState.from_reduced(
+            jnp.nanmin(losses_2d, axis=1),
+            jnp.nanmean(losses_2d, axis=1),
+            jnp.nanstd(losses_2d, axis=1),
+            jnp.full((n_iterations,), self.hash, dtype=int),
+            jnp.full((n_iterations,), popsize, dtype=int),
+            jnp.ones((n_iterations,), dtype=int),
+        )
+
+        # Global best across all chunks (earliest chunk wins ties).
+        best_chunk = jnp.argmin(chunk_best_losses)
+        best_loss = chunk_best_losses[best_chunk]
+        best_params = jax.tree.map(lambda x: x[best_chunk], chunk_best_params)
+
+        # "Current population" returned to RunState -- the last logical
+        # iteration's ``popsize`` candidates, matching ``UpdateClass.run``.
+        final_params = jax.tree.map(lambda x: x[-1], last_pops)
+
+        return (
+            final_params,
+            best_params,
+            best_loss,
+            opt_state,
+            batch_state,
+            history_state,
+        )
+
+    def batch_run(
+        self,
+        opt_state: PyTree,
+        params: InputParameters,
+        batch_state: BatchState,
+        dataset: dict[str, jax.Array],
+        key: PRNGKeyArray,
+        n_iterations: int,
+        verbose: bool,
+    ) -> RunResult:
+        """Run ``n_realizations`` random searches, one at a time.
+
+        Always :meth:`~UpdateClass.batch_run_sequential`, which maps the
+        overridden :meth:`run` over realizations with
+        :func:`jax.lax.map`, whatever :attr:`sequential_realizations`
+        says. The reason is peak memory, not branching: a vmap would
+        materialise every realization's ``(n_iterations * popsize, dim)``
+        candidate chunk concurrently, so peak memory would scale with
+        ``n_realizations``, while ``lax.map`` keeps one realization's
+        chunk live at a time. Results match a vmap because the
+        per-realization ``key`` slices -- and therefore the drawn
+        candidates -- are unchanged; only execution order differs (up to
+        float32 reduction-ordering noise XLA does not pin across the two
+        lowerings).
+
+        Parameters and returns are those of
+        :meth:`UpdateClass.batch_run`. ``opt_state`` is a
+        per-realization scalar placeholder, shape ``(n_realizations,)``,
+        returned unchanged, and ``params`` is read only for its
+        realization axis.
+        """
+        return self.batch_run_sequential(
+            opt_state=opt_state,
+            params=params,
+            batch_state=batch_state,
+            dataset=dataset,
+            key=key,
+            n_iterations=n_iterations,
+            verbose=verbose,
+        )
 
 
 def random_search_update(
@@ -212,7 +452,7 @@ def random_search_update(
     -------
     UpdateClass
         A :class:`RandomSearchUpdateClass` ready to slot into
-        :class:`l2co._src.run_state.RunState`.
+        l2co's ``RunState``.
     """
     del stop_fn  # accepted but unused; see docstring
     popsize = resolve_popsize(popsize, task)

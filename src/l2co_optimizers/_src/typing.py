@@ -25,6 +25,7 @@ from jaxtyping import Array, Bool, Float, Int, PRNGKeyArray, PyTree
 from optax import OptState as OptaxOptState
 
 if TYPE_CHECKING:
+    from l2co_optimizers._src.batching import BatchState
     from l2co_optimizers._src.opt_history import RecentHistory
     from l2co_optimizers._src.state_transfer import TransferBundle
 
@@ -145,3 +146,15 @@ class TaskLike(Protocol):
 PopSize = int | Callable[[TaskLike], int]
 
 SamplerFunction = Callable[[PRNGKeyArray, PyTree, int], InputParameters]
+
+#: The scan carry of :meth:`UpdateClass.run`: ``(params, opt_state, key,
+#: batch_state, done, recent_history)``. The first three are what
+#: ``step_fn`` sees; the rest is the loop's own bookkeeping.
+Carry = tuple[
+    InputParameters,
+    OptState,
+    PRNGKeyArray,
+    "BatchState",
+    Bool[Array, ""],
+    "RecentHistory",
+]

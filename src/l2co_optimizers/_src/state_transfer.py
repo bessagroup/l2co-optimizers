@@ -16,8 +16,8 @@ adapters rather than ``N²``. The justification is maintainability
 compile time and code size (a pairwise dispatch would trace ``N²``
 branches), and redundancy (most of those ``N²`` cells would be derived
 from the same handful of statistics anyway). It is explicitly **not** a
-per-tick runtime argument: rl2co's ``map_unroll`` and l2co's
-:func:`~l2co._src.update_class.batch_run_sequential_` both execute only
+per-tick runtime argument: rl2co's ``map_unroll`` and
+:meth:`UpdateClass.batch_run_sequential` both execute only
 the branch actually selected, so per-tick cost does not scale with the
 branch count.
 
