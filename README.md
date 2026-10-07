@@ -11,7 +11,7 @@ Bare optimizers compatible with the L2CO library
 ## Summary
 
 `l2co-optimizers` is the optimizer half of the [L2CO](https://github.com/bessagroup/l2co) ecosystem, as [`l2co-tasks`](https://github.com/bessagroup/l2co-tasks) is the task half. It provides:
-- **a name registry** of ready-to-run optimizers: the optax gradient methods, the evosax distribution- and population-based algorithms, plus SHADE, TuRBO, an RBF trust region, per-evaluation-key L-BFGS and random search;
+- **a name registry** of ready-to-run optimizers: the optax gradient methods, the evosax distribution- and population-based algorithms, the optimistix and scipy minimisers, IPOPT, plus SHADE, TuRBO, an RBF trust region, per-evaluation-key L-BFGS and random search;
 - **the `UpdateClass` container** every registry factory returns;
 - **the `OptimizationStep` spec** that names an optimizer with its hyperparameters and stopping criteria;
 - **ready-made Hydra optimizer configs**.
@@ -22,8 +22,8 @@ It also ships what each optimizer exposes to a loop that switches between optimi
 
 Learning-to-optimize and optimizer-selection research needs many optimizers behind one calling convention, so that a selector can switch between them mid-run. `l2co-optimizers` provides that convention without the meta-learning stack:
 - every optimizer is built by `optimizer_mapping(name)(model=..., loss_fn=..., pass_rng=..., opt_hash=..., bounded=..., stop_fn=...)`;
-- every one steps through the same `(params, opt_state, key)` carry;
-- every one reports into the same `OptHistory`.
+- every one runs a budget through the same `UpdateClass.run` and reports into the same `HistoryState`;
+- every one except the scipy minimisers and IPOPT also steps through the same `(params, opt_state, key)` carry, reporting each step as an `OptHistory`. Those seven own their loop and run the whole budget in one call (ADRs 0002 and 0003).
 
 It depends on neither `l2co` nor `l2co-tasks`, and has no notion of a task: factories take `model`, `loss_fn` and `pass_rng` as keywords. `l2co` is the bridge that unpacks an `l2co_tasks.Task` into them (l2co ADR 0018).
 
@@ -43,7 +43,13 @@ It depends on neither `l2co` nor `l2co-tasks`, and has no notion of a task: fact
 
 ## Getting started
 
-`l2co-optimizers` is `uv`-managed and depends on an editable install of a sibling [`f3dasm`](https://github.com/bessagroup/f3dasm) checkout, so lay the repositories out side by side before syncing:
+Install from PyPI:
+
+```bash
+pip install l2co-optimizers
+```
+
+To develop it, clone it next to a checkout of [`f3dasm`](https://github.com/bessagroup/f3dasm). The repository is `uv`-managed, and its `[tool.uv.sources]` installs `f3dasm` from that sibling checkout, in editable mode:
 
 ```bash
 git clone https://github.com/bessagroup/f3dasm.git
@@ -74,7 +80,34 @@ state = cmaes.init_fn(params, jr.key(0))
 )
 ```
 
-To run an optimizer on an `l2co_tasks.Task` over a full budget, with batching, realizations and the history reduction, use l2co's `init_run_state` and `batch_evaluate` (or its `RolloutWrapper`): l2co is where a task meets an optimizer. To add your own optimizer, see [Register your own optimizer](./docs/register_optimizer.ipynb).
+To run a full budget, wrap the built optimizer in a `RunState` and call `batch_evaluate`. It runs several independent realizations, each from its own sampled starting point, and needs no task:
+
+```python
+import equinox as eqx
+from l2co_optimizers import BatchState, RunState, batch_evaluate, normal_sampling
+
+adam = optimizer_mapping("adam")(
+    model=model, loss_fn=sphere, pass_rng=False, opt_hash=2, learning_rate=0.05
+)
+run_state = RunState.init(
+    adam, model=model, dataset={}, batch_size=None, key=jr.key(0)
+)
+run_state, batch_state, history = batch_evaluate(
+    run_state=run_state,
+    batch_state=BatchState.init(dataset={}, batch_size=None, key=jr.key(0)),
+    static=eqx.filter(model, eqx.is_inexact_array, inverse=True),
+    dataset={},
+    loss_fn=sphere,
+    sampler=normal_sampling,
+    n_iterations=100,
+    pass_rng=False,
+    key=jr.split(jr.key(1), 5),  # five realizations
+    verbose=False,
+)
+history.output_min.shape  # (5, 100): the lowest loss at each iteration
+```
+
+To run on an `l2co_tasks.Task`, use l2co: its `init_run_state` builds this `RunState` from an `OptimizationStep` and a task, and its `RolloutWrapper` wraps the whole loop. l2co is where a task meets an optimizer. To add your own optimizer, see [Register your own optimizer](./docs/register_optimizer.ipynb).
 
 ## Available optimizers
 
@@ -158,9 +191,11 @@ Every optimizer below is built by name through `optimizer_mapping(name)`. Names 
 
 The four optimistix entries (`bfgs`, `dfp`, `nonlinearcg`, `neldermead`) run as plain registry entries only: they evaluate the objective themselves, so `optimizer_parts` cannot unpack them into a switching menu. They bill the evaluations optimistix actually makes (one per step for the gradient solvers; for Nelder-Mead `n + 1` on the first step, 2 per step and `n + 3` on a shrink), never stop early on their own convergence test, and clip into `bounded` before each evaluation. See [ADR 0001](docs/adr/0001-optimistix-minimisers-as-plain-run-entries.md).
 
-The six scipy entries (`cobyqa`, `powell`, `tnc`, `trustkrylov`, `slsqp`, `trustconstr`) are plain registry entries too, for a different reason: scipy owns the optimization loop, so each run hands its whole budget to `scipy.optimize.minimize` inside one host callback. One iteration is one evaluation (value, or value and gradient), billed one. When scipy finishes before the budget, every remaining iteration re-evaluates its final point; if scipy fails, the run stays at the best point found. A `stop_fn` raises. See [ADR 0002](docs/adr/0002-scipy-minimisers-as-whole-run-callback-entries.md).
+The six scipy entries (`cobyqa`, `powell`, `tnc`, `trustkrylov`, `slsqp`, `trustconstr`) are plain registry entries too, for a different reason: scipy owns the optimization loop, so each run hands its whole budget to `scipy.optimize.minimize` inside one host callback. One iteration is one evaluation (value, or value and gradient), billed one. When scipy finishes before the budget, every remaining iteration re-evaluates its final point; if scipy fails, the run stays at the best point found. A `stop_fn` raises. See [ADR 0002](docs/adr/0002-scipy-minimisers-as-whole-run-callback-entries.md), and [ADR 0003](docs/adr/0003-nlp-solvers-as-host-callback-entries.md) for SLSQP and trust-constr.
 
-`ipopt` runs the same way, on the same driver, through casadi, whose wheels bundle IPOPT. IPOPT uses its own limited-memory quasi-Newton Hessian, and a value request and a gradient request at the same point are one evaluation. COBYQA's cost per step grows steeply with the dimensionality, and SLSQP's and trust-constr's above about a thousand dimensions, so high-dimensional cells can exceed a cluster's wall-clock limit. See [ADR 0003](docs/adr/0003-nlp-solvers-as-host-callback-entries.md).
+`ipopt` runs the same way, on the same driver, through casadi, whose wheels bundle IPOPT. IPOPT uses its own limited-memory quasi-Newton Hessian, and a value request and a gradient request at the same point are one evaluation. See [ADR 0003](docs/adr/0003-nlp-solvers-as-host-callback-entries.md).
+
+Three of these get expensive in high dimensions. COBYQA's cost per evaluation grows steeply with the dimensionality, and SLSQP's and trust-constr's do from about a thousand dimensions, so high-dimensional runs of these three can exceed a cluster's wall-clock limit.
 
 ## Hydra optimizer configurations
 
@@ -187,7 +222,14 @@ Hydra merges a group's options across search paths. So an application can keep i
 
 ## Releases
 
-Sibling packages in this ecosystem declare each other unpinned, so nothing enforces compatibility between releases. **`l2co-optimizers` 0.1.0 must be released before, or together with, `l2co` 1.6.0**, which is the first `l2co` to depend on it.
+Sibling packages in this ecosystem declare each other unpinned, so nothing enforces compatibility between releases. Pair the versions by hand:
+
+| `l2co` | `l2co-optimizers` |
+| --- | --- |
+| 1.6.0 | 0.1.0 only |
+| `develop` (unreleased) | 0.2.0 or later |
+
+**`l2co` 1.6.0 does not import with `l2co-optimizers` 0.2.0**, which an unpinned install now picks. 0.2.0 no longer exports 37 names that `l2co` 1.6.0 imports: the switching layer (`SubOpt`, the handshake policy) moved into `l2co` (l2co ADR 0019), and the per-library factories became private. With `l2co` 1.6.0, install `l2co-optimizers==0.1.0`.
 
 ## Community Support
 
