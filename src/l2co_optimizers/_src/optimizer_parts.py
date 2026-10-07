@@ -51,6 +51,7 @@ from l2co_optimizers._src.core.state_transfer import (
 from l2co_optimizers._src.core.typing import LossFunction
 from l2co_optimizers._src.core.utils import normalize_key
 from l2co_optimizers._src.evosax_implementations import normalized_evosax
+from l2co_optimizers._src.ipopt import IPOPT_OPTIMIZERS
 from l2co_optimizers._src.lbfgs import (
     DEFAULT_MAX_LINESEARCH_STEPS,
     stock_lbfgs,
@@ -338,8 +339,8 @@ def optimizer_parts(
     ValueError
         If ``opt_step.optimizer`` is not found in any of the registries,
         including when it names one of the optimistix minimisers (ADR
-        0001) or scipy minimisers (ADR 0002), which have no parts
-        representation.
+        0001), the scipy minimisers (ADR 0002) or IPOPT (ADR 0003),
+        which have no parts representation.
     """
     name = normalize_key(opt_step.optimizer)
     hyperparams = dict(opt_step.hyperparameters)
@@ -568,6 +569,15 @@ def optimizer_parts(
             f"there is no step to interleave with a switch. It runs only "
             f"as a plain registry entry, not inside a switching menu (ADR "
             f"0002)."
+        )
+
+    if name in IPOPT_OPTIMIZERS:
+        raise ValueError(
+            f"Optimizer {opt_step.optimizer!r} is IPOPT, which cannot be "
+            f"unpacked into parts: IPOPT owns the optimization loop and "
+            f"runs the whole budget inside one host callback, so there is "
+            f"no step to interleave with a switch. It runs only as a plain "
+            f"registry entry, not inside a switching menu (ADR 0003)."
         )
 
     raise ValueError(

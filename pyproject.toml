@@ -13,6 +13,7 @@ classifiers = [
   "Programming Language :: Python :: 3"
 ]
 dependencies = [
+  "casadi>=3.7,<4",
   "equinox>=0.13.0,<0.14",
   "evosax>=0.2.0,<0.3",
   "f3dasm",

@@ -10,6 +10,7 @@ from collections.abc import Callable
 from l2co_optimizers._src.core.update_class import UpdateClass
 from l2co_optimizers._src.core.utils import normalize_key
 from l2co_optimizers._src.evosax_implementations import evosax_mapping
+from l2co_optimizers._src.ipopt import ipopt_mapping
 from l2co_optimizers._src.lbfgs import lbfgs_mapping
 from l2co_optimizers._src.optax_implementations import optax_mapping
 from l2co_optimizers._src.optimistix_implementations import optimistix_mapping
@@ -30,7 +31,8 @@ __status__ = "Stable"
 # that, when called with the keyword contract used by ``RunState.init``
 # (``**hyperparameters, task, opt_hash, bounded, stop_fn``), returns an
 # ``UpdateClass`` instance. Built-in entries are the base optimizers from the
-# optax/evosax/random-search/shade/lbfgs/optimistix/scipy modules only.
+# optax/evosax/random-search/shade/lbfgs/optimistix/scipy/ipopt modules
+# only.
 # Meta-optimizers are NOT hardcoded here: l2co's own ``"l2co"`` strategy
 # self-registers via ``register_optimizer`` from
 # ``l2co._src.meta_optimizer`` (a side effect of
@@ -60,6 +62,7 @@ optimizers: dict[str, Callable[..., UpdateClass]] = {
         | lbfgs_mapping
         | optimistix_mapping
         | scipy_mapping
+        | ipopt_mapping
     ).items()
 }
 

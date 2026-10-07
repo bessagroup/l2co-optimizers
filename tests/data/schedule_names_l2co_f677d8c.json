@@ -325,6 +325,12 @@
    5651126
   ]
  ],
+ "ipopt": [
+  [
+   "ipopt",
+   10812417
+  ]
+ ],
  "lr_sweep_pde": [
   [
    "adam_learning_rate=0.1",
@@ -413,6 +419,14 @@
   [
    "trustkrylov",
    793108
+  ],
+  [
+   "slsqp",
+   5153975
+  ],
+  [
+   "trustconstr",
+   8722483
   ]
  ],
  "sepcmaes": [

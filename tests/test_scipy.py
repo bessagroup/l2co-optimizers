@@ -1,8 +1,8 @@
-"""Unit tests for the scipy registry entries (ADR 0002).
+"""Unit tests for the scipy registry entries (ADRs 0002, 0003).
 
-``"cobyqa"``, ``"powell"``, ``"tnc"`` and ``"trustkrylov"`` hand a whole
-run to :func:`scipy.optimize.minimize` inside one host callback. The
-properties checked:
+``"cobyqa"``, ``"powell"``, ``"tnc"``, ``"trustkrylov"``, ``"slsqp"`` and
+``"trustconstr"`` hand a whole run to :func:`scipy.optimize.minimize`
+inside one host callback. The properties checked:
 
 1. the wrapper is transparent -- its evaluations are the ones a direct
    ``scipy.optimize.minimize`` call makes, until scipy stops;
@@ -11,7 +11,8 @@ properties checked:
 3. one iteration is one real evaluation, billed one, for exactly
    ``n_iterations``;
 4. after scipy stops, the final point is re-evaluated to the budget;
-   after a failure, the best point is;
+   after a failure, the best point is; a method that stops evaluating
+   is stopped;
 5. every evaluated point lies in ``bounded``;
 6. stochastic and minibatched losses get a fresh key and batch per
    evaluation, drawn as the run loop draws them;
@@ -47,9 +48,12 @@ from l2co_optimizers._src.scipy_implementations import (
     _COBYQA_FINAL_TR_RADIUS,
     _POWELL_FTOL,
     _POWELL_XTOL,
+    _SLSQP_FTOL,
     _TNC_FTOL,
     _TNC_GTOL,
     _TNC_XTOL,
+    _TRUSTCONSTR_GTOL,
+    _TRUSTCONSTR_XTOL,
     _TRUSTKRYLOV_GTOL,
     _UNREACHABLE,
     SCIPY_OPTIMIZERS,
@@ -57,7 +61,9 @@ from l2co_optimizers._src.scipy_implementations import (
     _scipy_update,
     cobyqa_update,
     powell_update,
+    slsqp_update,
     tnc_update,
+    trustconstr_update,
     trustkrylov_update,
 )
 
@@ -70,8 +76,8 @@ __credits__ = ["Martin van der Schelling"]
 __status__ = "Stable"
 # =============================================================================
 
-NAMES = ("cobyqa", "powell", "tnc", "trustkrylov")
-NATIVE_BOUNDS = ("cobyqa", "powell", "tnc")
+NAMES = ("cobyqa", "powell", "tnc", "trustkrylov", "slsqp", "trustconstr")
+NATIVE_BOUNDS = ("cobyqa", "powell", "tnc", "slsqp", "trustconstr")
 DIM = 3
 
 
@@ -145,6 +151,8 @@ def _counting(loss_fn, calls):
         ("powell", powell_update),
         ("tnc", tnc_update),
         ("trustkrylov", trustkrylov_update),
+        ("slsqp", slsqp_update),
+        ("trustconstr", trustconstr_update),
     ],
 )
 def test_registered_under_its_bare_name(name, factory):
@@ -152,8 +160,12 @@ def test_registered_under_its_bare_name(name, factory):
     assert optimizers[name].func is factory
 
 
-def test_trust_krylov_resolves_from_its_scipy_spelling():
-    assert optimizer_mapping("trust-krylov") is optimizers["trustkrylov"]
+@pytest.mark.parametrize(
+    ("spelling", "name"),
+    [("trust-krylov", "trustkrylov"), ("trust-constr", "trustconstr")],
+)
+def test_resolves_from_its_scipy_spelling(spelling, name):
+    assert optimizer_mapping(spelling) is optimizers[name]
 
 
 # =============================================================================
@@ -198,6 +210,27 @@ def _direct_scipy(name, loss_fn, x0):
                 xtol=_POWELL_XTOL,
                 ftol=_POWELL_FTOL,
                 maxfev=_UNREACHABLE,
+                maxiter=_UNREACHABLE,
+            ),
+        )
+    elif name == "slsqp":
+        so.minimize(
+            fg,
+            x0,
+            jac=True,
+            method="SLSQP",
+            options=dict(ftol=_SLSQP_FTOL, maxiter=_UNREACHABLE),
+        )
+    elif name == "trustconstr":
+        so.minimize(
+            fg,
+            x0,
+            jac=True,
+            hess=so.BFGS(),
+            method="trust-constr",
+            options=dict(
+                gtol=_TRUSTCONSTR_GTOL,
+                xtol=_TRUSTCONSTR_XTOL,
                 maxiter=_UNREACHABLE,
             ),
         )
@@ -312,7 +345,9 @@ def test_best_is_the_lowest_evaluation(name):
 #                                                       4. after scipy stops
 
 
-@pytest.mark.parametrize("name", ["cobyqa", "tnc", "trustkrylov"])
+@pytest.mark.parametrize(
+    "name", ["cobyqa", "tnc", "trustkrylov", "trustconstr"]
+)
 def test_final_point_is_re_evaluated_until_the_budget(name):
     calls = []
     n = 2000
@@ -329,6 +364,30 @@ def test_final_point_is_re_evaluated_until_the_budget(name):
     # ... and recorded that point's loss every time.
     np.testing.assert_array_equal(losses[stopped:], losses[-1])
     np.testing.assert_array_equal(np.asarray(out[0])[0], calls[-1])
+
+
+def test_a_method_that_stops_evaluating_is_stopped(monkeypatch):
+    """trust-constr at ``xtol = 0`` iterates forever without evaluating.
+
+    Its trust radius reaches exactly zero, so every trial point is the
+    current one, which scipy has already evaluated. The stall guard ends
+    the run there, and the rest of the budget re-evaluates that point.
+    """
+    monkeypatch.setattr(
+        "l2co_optimizers._src.scipy_implementations._TRUSTCONSTR_XTOL", 0.0
+    )
+
+    def sphere(x, **_):
+        return jnp.sum((x - 0.5) ** 2)
+
+    calls = []
+    n = 300
+    out = _run(_build("trustconstr", _counting(sphere, calls)), n)
+    jax.effects_barrier()
+    assert len(calls) == n
+    moved = [i for i in range(n) if not np.array_equal(calls[i], calls[-1])]
+    assert moved[-1] + 1 < n // 2
+    assert float(out[2]) < 1e-10
 
 
 def _failing(after, how):
@@ -524,6 +583,7 @@ def test_batches_are_drawn_as_the_run_loop_draws_them():
         ("tnc", {"stepmx": 0.01}),
         ("trustkrylov", {"initial_trust_radius": 0.05}),
         ("trustkrylov", {"max_trust_radius": 0.1}),
+        ("trustconstr", {"initial_tr_radius": 0.05}),
     ],
 )
 def test_hyperparameters_change_the_run(name, hp):
@@ -552,6 +612,25 @@ def test_hyperparameters_change_the_run(name, hp):
         # Whether 0.2 changes a run depends on whether some step's
         # reduction ratio falls in [0.15, 0.2); here it only must arrive.
         ("trustkrylov", {"eta": 0.2}, "eta", 0.2),
+        (
+            "trustconstr",
+            {"initial_tr_radius": 0.3},
+            "initial_tr_radius",
+            0.3,
+        ),
+        # The two barrier settings act only with a box; they must arrive.
+        (
+            "trustconstr",
+            {"initial_barrier_parameter": 0.5},
+            "initial_barrier_parameter",
+            0.5,
+        ),
+        (
+            "trustconstr",
+            {"initial_barrier_tolerance": 0.5},
+            "initial_barrier_tolerance",
+            0.5,
+        ),
     ],
 )
 def test_hyperparameters_reach_scipy(monkeypatch, name, hp, option, value):
@@ -649,6 +728,8 @@ def test_batch_run_maps_its_own_run_over_realizations(name):
         ("powell", FAMILY_DERIVATIVE_FREE),
         ("tnc", FAMILY_GRADIENT),
         ("trustkrylov", FAMILY_GRADIENT),
+        ("slsqp", FAMILY_GRADIENT),
+        ("trustconstr", FAMILY_GRADIENT),
     ],
 )
 def test_family(name, family):

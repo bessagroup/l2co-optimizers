@@ -181,12 +181,12 @@ uses.
 | Method | Reason |
 |---|---|
 | L-BFGS-B, BFGS, CG, Nelder-Mead, differential evolution | Another implementation of `lbfgs`, `bfgs`, `nonlinearcg`, `neldermead` and `differentialevolution` |
-| SLSQP | Dense BFGS on a box-only problem |
+| SLSQP | Dense BFGS on a box-only problem (added after all, as a named baseline: ADR 0003) |
 | Newton-CG | Truncated Newton, like TNC |
 | trust-ncg | A Krylov trust region, like trust-krylov |
 | trust-exact, dogleg | Need the full n×n Hessian |
 | COBYLA | COBYQA's idea with a linear model |
-| trust-constr | Duplicates trust-ncg without a box; slow Python |
+| trust-constr | Duplicates trust-ncg without a box; slow Python (added after all, with a BFGS Hessian, as a named baseline: ADR 0003) |
 | DIRECT, dual_annealing, shgo | Need a finite box, and no task set has one |
 | basinhopping | A meta-optimizer around a duplicate local solver |
 | brute | Exponential in d |

@@ -1,10 +1,11 @@
 """
 scipy.optimize minimisers as plain-run ``UpdateClass`` entries (ADR 0002).
 
-Four registry entries -- ``"cobyqa"``, ``"powell"``, ``"tnc"`` and
-``"trustkrylov"`` -- each run :func:`scipy.optimize.minimize` with the
-matching method. scipy owns the optimization loop, calling the
-objective itself, so none of them can be stepped from a JAX scan:
+Six registry entries -- ``"cobyqa"``, ``"powell"``, ``"tnc"``,
+``"trustkrylov"``, ``"slsqp"`` and ``"trustconstr"`` -- each run
+:func:`scipy.optimize.minimize` with the matching method. scipy owns
+the optimization loop, calling the objective itself, so none of them
+can be stepped from a JAX scan:
 :class:`ScipyUpdateClass` overrides :meth:`~UpdateClass.run` to make
 the *whole run* one :func:`jax.pure_callback`. On the host, the
 callback drives scipy against a jitted evaluation of the loss and
@@ -12,8 +13,8 @@ returns fixed-length arrays the run loop turns into a
 :class:`~l2co_optimizers.HistoryState`.
 
 The decisions behind the wrapping are recorded in
-``docs/adr/0002-scipy-minimisers-as-whole-run-callback-entries.md``; in
-brief:
+``docs/adr/0002-scipy-minimisers-as-whole-run-callback-entries.md``, and
+those for SLSQP and trust-constr in ADR 0003; in brief:
 
 * **One iteration is one evaluation.** Every call scipy makes to the
   objective -- the value, or value and gradient together -- is one
@@ -34,14 +35,19 @@ brief:
 * **Stochastic or minibatched losses** get a fresh batch and key on
   every evaluation, drawn exactly as :meth:`UpdateClass.step` draws
   them for any other entry.
-* **Bounds** are passed to scipy for COBYQA, Powell and TNC, which
-  support them, with the starting point clipped into the box. trust-krylov
-  does not, so its loss is evaluated at the point projected into the box,
-  with the gradient taken through the projection. In all four, the
+* **Bounds** are passed to scipy for COBYQA, Powell, TNC, SLSQP and
+  trust-constr, which support them, with the starting point clipped into
+  the box (trust-constr's box is ``keep_feasible``). trust-krylov does
+  not, so its loss is evaluated at the point projected into the box,
+  with the gradient taken through the projection. In all six, the
   history records the projected point.
+* **A method that stops evaluating is stopped.** trust-constr can
+  iterate forever without asking for an evaluation once its steps no
+  longer move ``x``; after :data:`_STALL_ITERATIONS` such iterations the
+  run ends at its current point, as if scipy had terminated.
 * **No stopping criterion and no switching.** A ``stop_fn`` raises,
   since nothing can check it inside one callback, and
-  ``optimizer_parts`` refuses all four.
+  ``optimizer_parts`` refuses all six.
 """
 
 #                                                                       Modules
@@ -92,7 +98,7 @@ logger = logging.getLogger(__name__)
 
 #: The registry names this module provides, normalized.
 SCIPY_OPTIMIZERS: frozenset[str] = frozenset(
-    {"cobyqa", "powell", "tnc", "trustkrylov"}
+    {"cobyqa", "powell", "tnc", "trustkrylov", "slsqp", "trustconstr"}
 )
 
 #: An iteration or evaluation cap scipy never reaches: the budget is
@@ -101,8 +107,8 @@ SCIPY_OPTIMIZERS: frozenset[str] = frozenset(
 #: caps to C code that overflows on anything larger.
 _UNREACHABLE = 2**31 - 1
 
-#: Stopping tolerances, each as tight as its method tolerates (ADR
-#: 0002), so scipy ends a run only when the method cannot progress.
+#: Stopping tolerances, each as tight as its method tolerates (ADRs
+#: 0002, 0003), so scipy ends a run only when the method cannot progress.
 #: Chosen by running every method on sphere, a 1e6-conditioned
 #: ellipsoid, Rosenbrock and Rastrigin at d = 2, 10, 40: at these values
 #: COBYQA stops on its trust-region radius, Powell on "no improvement",
@@ -110,7 +116,11 @@ _UNREACHABLE = 2**31 - 1
 #: clean tolerance to find: whatever its ``gtol`` (1e-12, 1e-15 or 0),
 #: it stops when its model stops predicting improvement, or proposes a
 #: non-finite step at a machine-precision optimum, which the driver
-#: treats as termination.
+#: treats as termination. SLSQP stops on "positive directional
+#: derivative for linesearch" and trust-constr on its trust radius
+#: falling below ``xtol``. trust-constr's ``xtol`` cannot be zero: its
+#: radius reaches exactly zero and it then iterates forever without
+#: evaluating anything.
 _COBYQA_FINAL_TR_RADIUS = 1e-15
 _POWELL_XTOL = 1e-15
 _POWELL_FTOL = 0.0
@@ -118,6 +128,16 @@ _TNC_FTOL = 0.0
 _TNC_XTOL = 0.0
 _TNC_GTOL = 0.0
 _TRUSTKRYLOV_GTOL = 0.0
+_SLSQP_FTOL = 0.0
+_TRUSTCONSTR_GTOL = 0.0
+_TRUSTCONSTR_XTOL = 1e-15
+
+#: Consecutive iterations without a new evaluation after which a method
+#: counts as stopped (:meth:`_Driver.stalled`). A method whose steps no
+#: longer change ``x`` -- a trust radius at zero, or a box it cannot
+#: leave -- can otherwise iterate forever without evaluating anything,
+#: and the run would never reach its budget.
+_STALL_ITERATIONS = 1000
 
 #: Gradients of recent non-probe evaluations kept for
 #: :func:`_fd_hessp`; the iterate a Hessian-vector product is taken at
@@ -214,6 +234,8 @@ class _Driver:
         self.best_loss = np.inf
         self.last_x = x0
         self._grads: OrderedDict[bytes, np.ndarray] = OrderedDict()
+        self._count_at_iteration = 0
+        self._iterations_without_eval = 0
 
     @property
     def budget_left(self) -> bool:
@@ -269,6 +291,19 @@ class _Driver:
         if cached is not None:
             return cached
         return self.value_and_grad(x)[1]
+
+    def stalled(self) -> bool:
+        """Call once per method iteration: has the method stopped evaluating?
+
+        True once :data:`_STALL_ITERATIONS` consecutive calls passed
+        without a new evaluation in between.
+        """
+        if self.count != self._count_at_iteration:
+            self._count_at_iteration = self.count
+            self._iterations_without_eval = 0
+            return False
+        self._iterations_without_eval += 1
+        return self._iterations_without_eval >= _STALL_ITERATIONS
 
     def idle(self, x: np.ndarray) -> None:
         """Re-evaluate ``x`` until the budget is spent."""
@@ -927,9 +962,153 @@ def trustkrylov_update(
     )
 
 
+def slsqp_update(
+    *,
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
+    opt_hash: int,
+    bounded: tuple[float | None, float | None] | None = (None, None),
+    stop_fn: StopFunction | None = None,
+) -> UpdateClass:
+    """Construct the ``UpdateClass`` behind ``optimizer="slsqp"``.
+
+    ``scipy.optimize.minimize(method="SLSQP")``: Kraft's sequential
+    least-squares quadratic programming, an SQP method with a dense BFGS
+    Hessian and an L1 merit line search. With no constraints beyond a
+    box, each step is a bound-constrained least-squares subproblem. It
+    takes no hyperparameters. Its dense matrices make the cost per step
+    grow steeply above about a thousand dimensions. Parameters are those
+    of :func:`cobyqa_update`, without ``initial_tr_radius``; with a box,
+    SLSQP keeps every iterate inside it.
+
+    Returns
+    -------
+    UpdateClass
+        A :class:`ScipyUpdateClass`.
+
+    Raises
+    ------
+    ValueError
+        If ``stop_fn`` is not ``None``.
+    """
+
+    def minimize(driver, x0, bounds):
+        return so.minimize(
+            driver.value_and_grad,
+            x0,
+            jac=True,
+            method="SLSQP",
+            bounds=bounds,
+            options=dict(ftol=_SLSQP_FTOL, maxiter=_UNREACHABLE),
+        ).x
+
+    return _scipy_update(
+        minimize,
+        name="slsqp",
+        family=FAMILY_GRADIENT,
+        with_grad=True,
+        model=model,
+        loss_fn=loss_fn,
+        pass_rng=pass_rng,
+        opt_hash=opt_hash,
+        bounded=bounded,
+        stop_fn=stop_fn,
+    )
+
+
+def trustconstr_update(
+    *,
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
+    opt_hash: int,
+    bounded: tuple[float | None, float | None] | None = (None, None),
+    stop_fn: StopFunction | None = None,
+    initial_tr_radius: float = 1.0,
+    initial_barrier_parameter: float = 0.1,
+    initial_barrier_tolerance: float = 0.1,
+) -> UpdateClass:
+    """Construct the ``UpdateClass`` behind ``optimizer="trustconstr"``.
+
+    ``scipy.optimize.minimize(method="trust-constr")`` with scipy's
+    default dense BFGS Hessian approximation. Without a box it is
+    Byrd-Omojokun trust-region SQP, which on an unconstrained problem is
+    a quasi-Newton trust region solved by projected conjugate gradients.
+    With a box it is a trust-region interior-point (barrier) method, and
+    the box is ``keep_feasible``, so every iterate stays inside it.
+    Parameters other than the three below are those of
+    :func:`cobyqa_update`. Its pure-Python iteration makes it slow, and
+    its dense Hessian makes the cost per step grow steeply above about a
+    thousand dimensions.
+
+    Parameters
+    ----------
+    initial_tr_radius : float, optional
+        Initial trust-region radius; scipy's default ``1.0``.
+    initial_barrier_parameter : float, optional
+        Initial barrier parameter of the interior-point method; scipy's
+        default ``0.1``. Used only with a box.
+    initial_barrier_tolerance : float, optional
+        Initial tolerance of the barrier subproblem; scipy's default
+        ``0.1``. Used only with a box.
+
+    Returns
+    -------
+    UpdateClass
+        A :class:`ScipyUpdateClass`.
+
+    Raises
+    ------
+    ValueError
+        If ``stop_fn`` is not ``None``.
+    """
+
+    def minimize(driver, x0, bounds):
+        if bounds is not None:
+            bounds = so.Bounds(bounds.lb, bounds.ub, keep_feasible=True)
+
+        def callback(intermediate_result):
+            if driver.stalled():
+                raise StopIteration
+
+        return so.minimize(
+            driver.value_and_grad,
+            x0,
+            jac=True,
+            hess=so.BFGS(),
+            method="trust-constr",
+            bounds=bounds,
+            callback=callback,
+            options=dict(
+                initial_tr_radius=initial_tr_radius,
+                initial_barrier_parameter=initial_barrier_parameter,
+                initial_barrier_tolerance=initial_barrier_tolerance,
+                gtol=_TRUSTCONSTR_GTOL,
+                xtol=_TRUSTCONSTR_XTOL,
+                maxiter=_UNREACHABLE,
+            ),
+        ).x
+
+    return _scipy_update(
+        minimize,
+        name="trustconstr",
+        family=FAMILY_GRADIENT,
+        with_grad=True,
+        model=model,
+        loss_fn=loss_fn,
+        pass_rng=pass_rng,
+        opt_hash=opt_hash,
+        bounded=bounded,
+        stop_fn=stop_fn,
+    )
+
+
 scipy_mapping = {
     "cobyqa": Partial(cobyqa_update),
     "powell": Partial(powell_update),
     "tnc": Partial(tnc_update),
     "trustkrylov": Partial(trustkrylov_update),
+    "slsqp": Partial(slsqp_update),
+    "trustconstr": Partial(trustconstr_update),
 }
