@@ -13,7 +13,7 @@ authors:
     email: "m.p.vanderschelling@tudelft.nl"
 license: BSD-3-Clause
 repository-code: "https://github.com/bessagroup/l2co-optimizers"
-version: "0.1.0"
+version: "0.3.0"
 type: software
 keywords:
   - optimization

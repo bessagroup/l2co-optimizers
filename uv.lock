@@ -973,7 +973,7 @@ wheels = [
 
 [[package]]
 name = "l2co-optimizers"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "casadi" },
