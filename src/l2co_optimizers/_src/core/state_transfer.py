@@ -149,7 +149,20 @@ FAMILY_POPULATION = "population"
 FAMILY_GRADIENT = "gradient"
 """Unit population, iterate plus a preconditioner."""
 
-FAMILIES = (FAMILY_DISTRIBUTION, FAMILY_POPULATION, FAMILY_GRADIENT)
+FAMILY_DERIVATIVE_FREE = "derivative_free"
+"""Unit population; an iterate plus a derivative-free local model.
+
+The model is an interpolation set (COBYQA) or a set of search
+directions (Powell). Only plain-run entries hold this family (ADR
+0002), so it has no transfer spec: :func:`transfer_spec_for` refuses it.
+"""
+
+FAMILIES = (
+    FAMILY_DISTRIBUTION,
+    FAMILY_POPULATION,
+    FAMILY_GRADIENT,
+    FAMILY_DERIVATIVE_FREE,
+)
 
 
 #                                                              The bundle
@@ -1285,10 +1298,18 @@ def transfer_spec_for(name: str, family: str) -> TransferSpec:
     Raises
     ------
     ValueError
-        If ``family`` is not one of :data:`FAMILIES`.
+        If ``family`` is not one of :data:`FAMILIES`, or is
+        :data:`FAMILY_DERIVATIVE_FREE`, a plain-run family with no
+        transfer spec.
     """
     if family not in FAMILIES:
         raise ValueError(f"family must be one of {FAMILIES}; got {family!r}")
+    if family not in _FAMILY_DEFAULTS:
+        raise ValueError(
+            f"family {family!r} is held only by plain-run entries, which "
+            f"never take part in a switch, so it has no transfer spec "
+            f"(ADR 0002); got optimizer {name!r}"
+        )
     return TRANSFER_OVERRIDES.get(name, _FAMILY_DEFAULTS[family])
 
 

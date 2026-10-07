@@ -52,6 +52,7 @@ from l2co_optimizers._src.optimizer_parts import (
     l2co_native_evosax,
     l2co_native_optax,
 )
+from l2co_optimizers._src.scipy_implementations import SCIPY_OPTIMIZERS
 
 from .toy_problems import sphere_problem
 
@@ -76,9 +77,14 @@ META_OPTIMIZERS = frozenset({"l2co", "rl2co"})
 #
 # The optimistix minimisers evaluate the objective themselves, which is
 # neither an optax transform nor an ask/tell population, so they are
-# plain-run entries only (ADR 0001).
+# plain-run entries only (ADR 0001). The scipy minimisers run their whole
+# budget inside one host callback, so they have no step to unpack at all
+# (ADR 0002).
 NON_PARTS_OPTIMIZERS = (
-    META_OPTIMIZERS | {"randomsearch"} | OPTIMISTIX_OPTIMIZERS
+    META_OPTIMIZERS
+    | {"randomsearch"}
+    | OPTIMISTIX_OPTIMIZERS
+    | SCIPY_OPTIMIZERS
 )
 
 

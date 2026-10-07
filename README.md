@@ -113,6 +113,8 @@ Every optimizer below is built by name through `optimizer_mapping(name)`. Names 
 | `bfgs` | BFGS with a backtracking Armijo line search | Quasi-Newton | optimistix |
 | `dfp` | DFP with a backtracking Armijo line search | Quasi-Newton | optimistix |
 | `nonlinearcg` | Nonlinear conjugate gradient (Polak-Ribiere by default; Fletcher-Reeves, Hestenes-Stiefel, Dai-Yuan) with a backtracking Armijo line search | Gradient | optimistix |
+| `tnc` | Truncated Newton (TNC): a line-search Newton method on finite-difference Hessian-vector products | Newton-type | scipy |
+| `trustkrylov` | Newton trust region with a Krylov (GLTR) subproblem solver; Hessian-vector products by finite differences of gradients | Newton-type | scipy |
 | `ars` | Augmented Random Search | Distribution-based | evosax |
 | `asebo` | ASEBO | Distribution-based | evosax |
 | `cmaes` | CMA-ES | Distribution-based | evosax |
@@ -147,15 +149,20 @@ Every optimizer below is built by name through `optimizer_mapping(name)`. Names 
 | `shade` | SHADE, with optional turning-based mutation (Tanabe & Fukunaga 2013; Sun et al. 2020) | Population-based | built-in (evosax API) |
 | `turbo` | TuRBO trust-region Bayesian optimization (Eriksson et al. 2019) | Model-based | built-in |
 | `rbf_trust_region` | RBF-surrogate trust-region search (ORBIT / DYCORS family) | Model-based | built-in |
+| `cobyqa` | COBYQA: derivative-free trust region on quadratic interpolation models (Ragonneau & Zhang) | Model-based | scipy |
+| `powell` | Powell's conjugate direction method (derivative-free line searches) | Direct search | scipy |
 | `randomsearch` | One-shot random search | Random | built-in |
 
 The four optimistix entries (`bfgs`, `dfp`, `nonlinearcg`, `neldermead`) run as plain registry entries only: they evaluate the objective themselves, so `optimizer_parts` cannot unpack them into a switching menu. They bill the evaluations optimistix actually makes (one per step for the gradient solvers; for Nelder-Mead `n + 1` on the first step, 2 per step and `n + 3` on a shrink), never stop early on their own convergence test, and clip into `bounded` before each evaluation. See [ADR 0001](docs/adr/0001-optimistix-minimisers-as-plain-run-entries.md).
+
+The four scipy entries (`cobyqa`, `powell`, `tnc`, `trustkrylov`) are plain registry entries too, for a different reason: scipy owns the optimization loop, so each run hands its whole budget to `scipy.optimize.minimize` inside one host callback. One iteration is one evaluation (value, or value and gradient), billed one. When scipy finishes before the budget, every remaining iteration re-evaluates its final point; if scipy fails, the run stays at the best point found. A `stop_fn` raises. COBYQA's cost per step grows steeply with the dimensionality, so high-dimensional cells can exceed a cluster's wall-clock limit. See [ADR 0002](docs/adr/0002-scipy-minimisers-as-whole-run-callback-entries.md).
 
 ## Hydra optimizer configurations
 
 The package ships ready-made `optimizers` config groups under `l2co_optimizers/conf/optimizers/`, installed as package data. Each YAML is a list of `OptimizationStep` specs:
 - **single-optimizer sweeps:** `adam`, `sepcmaes`, `lr_sweep_pde`;
 - **the optimistix minimisers at their defaults (plain runs only):** `optimistix`;
+- **the scipy minimisers at their defaults (plain runs only):** `scipy`;
 - **the portfolios used across the L2CO studies:** `small`, `medium`, `standard`, `standard_no_stopping`, `all`;
 - **curated menus:** `headroom4`, `contrast`, `two_functions`, `gaussian_classification`, `pde`, `supercompressible`.
 

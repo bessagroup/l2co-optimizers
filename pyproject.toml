@@ -23,7 +23,8 @@ dependencies = [
   "jaxtyping>=0.3.2",
   "omegaconf",
   "optax>=0.2.5",
-  "optimistix>=0.1.0,<0.2"
+  "optimistix>=0.1.0,<0.2",
+  "scipy>=1.18,<2"
 ]
 description = "Bare optimizers compatible with the L2CO library"
 keywords = ["optimization", "optimizers", "jax", "evolution-strategies"]

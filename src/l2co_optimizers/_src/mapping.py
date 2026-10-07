@@ -15,6 +15,7 @@ from l2co_optimizers._src.optax_implementations import optax_mapping
 from l2co_optimizers._src.optimistix_implementations import optimistix_mapping
 from l2co_optimizers._src.random_search import random_search_mapping
 from l2co_optimizers._src.rbf_trust_region import rbf_trust_region_mapping
+from l2co_optimizers._src.scipy_implementations import scipy_mapping
 from l2co_optimizers._src.shade import shade_mapping
 from l2co_optimizers._src.turbo import turbo_mapping
 
@@ -29,7 +30,7 @@ __status__ = "Stable"
 # that, when called with the keyword contract used by ``RunState.init``
 # (``**hyperparameters, task, opt_hash, bounded, stop_fn``), returns an
 # ``UpdateClass`` instance. Built-in entries are the base optimizers from the
-# optax/evosax/random-search/shade/lbfgs/optimistix modules only.
+# optax/evosax/random-search/shade/lbfgs/optimistix/scipy modules only.
 # Meta-optimizers are NOT hardcoded here: l2co's own ``"l2co"`` strategy
 # self-registers via ``register_optimizer`` from
 # ``l2co._src.meta_optimizer`` (a side effect of
@@ -58,6 +59,7 @@ optimizers: dict[str, Callable[..., UpdateClass]] = {
         | turbo_mapping
         | lbfgs_mapping
         | optimistix_mapping
+        | scipy_mapping
     ).items()
 }
 

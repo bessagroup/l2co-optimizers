@@ -1,0 +1,12 @@
+# The scipy.optimize minimisers at their defaults (ADR 0002). Plain-run
+# entries only: they cannot appear in a switching menu. COBYQA's cost per
+# step grows steeply with the dimensionality; in high dimension a cell can
+# exceed a cluster's wall-clock limit.
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: cobyqa
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: powell
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: tnc
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: trustkrylov

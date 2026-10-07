@@ -968,6 +968,7 @@ dependencies = [
     { name = "omegaconf" },
     { name = "optax" },
     { name = "optimistix" },
+    { name = "scipy" },
 ]
 
 [package.optional-dependencies]
@@ -1019,6 +1020,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'tests'", specifier = ">=8.4.1" },
     { name = "pytest-cov", marker = "extra == 'tests'", specifier = ">=6.2.1" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.10" },
+    { name = "scipy", specifier = ">=1.18,<2" },
     { name = "setuptools", marker = "extra == 'dev'", specifier = ">=77.0.0" },
     { name = "wheel", marker = "extra == 'dev'" },
 ]
