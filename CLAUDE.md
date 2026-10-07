@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **l2co-optimizers** holds the bare optimizers of the L2CO ecosystem:
 - the name registry and the `UpdateClass` container;
 - the `OptimizationStep` spec;
-- the optax/evosax factories, plus SHADE, TuRBO, the RBF trust region, per-evaluation-key L-BFGS and random search;
+- the optax/evosax factories, the optimistix and scipy minimisers, IPOPT, plus SHADE, TuRBO, the RBF trust region, per-evaluation-key L-BFGS and random search;
 - what each optimizer exposes to a switching loop: its state-transfer ports and `optimizer_parts` (the switching layer itself — `SubOpt`, the handshake policy, `menu_loss_and_grad` — is l2co's, l2co ADR 0019);
 - the Hydra `optimizers` config group.
 
