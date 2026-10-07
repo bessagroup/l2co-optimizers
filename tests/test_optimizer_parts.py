@@ -39,6 +39,7 @@ from l2co_optimizers import (
 )
 from l2co_optimizers._src.core.state_transfer import transfer_spec_for
 from l2co_optimizers._src.evosax_implementations import normalized_evosax
+from l2co_optimizers._src.ipopt import IPOPT_OPTIMIZERS
 from l2co_optimizers._src.lbfgs import stock_lbfgs
 from l2co_optimizers._src.mapping import optimizers as OPTIMIZER_REGISTRY
 from l2co_optimizers._src.optax_implementations import (
@@ -52,6 +53,7 @@ from l2co_optimizers._src.optimizer_parts import (
     l2co_native_evosax,
     l2co_native_optax,
 )
+from l2co_optimizers._src.scipy_implementations import SCIPY_OPTIMIZERS
 
 from .toy_problems import sphere_problem
 
@@ -76,9 +78,15 @@ META_OPTIMIZERS = frozenset({"l2co", "rl2co"})
 #
 # The optimistix minimisers evaluate the objective themselves, which is
 # neither an optax transform nor an ask/tell population, so they are
-# plain-run entries only (ADR 0001).
+# plain-run entries only (ADR 0001). The scipy minimisers run their whole
+# budget inside one host callback, so they have no step to unpack at all
+# (ADR 0002); so does IPOPT (ADR 0003).
 NON_PARTS_OPTIMIZERS = (
-    META_OPTIMIZERS | {"randomsearch"} | OPTIMISTIX_OPTIMIZERS
+    META_OPTIMIZERS
+    | {"randomsearch"}
+    | OPTIMISTIX_OPTIMIZERS
+    | SCIPY_OPTIMIZERS
+    | IPOPT_OPTIMIZERS
 )
 
 
