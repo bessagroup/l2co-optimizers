@@ -30,8 +30,9 @@ __status__ = "Stable"
 # (``**hyperparameters, task, opt_hash, bounded, stop_fn``), returns an
 # ``UpdateClass`` instance. Built-in entries are the base optimizers from the
 # optax/evosax/random-search/shade/lbfgs/optimistix modules only.
-# Meta-optimizers are NOT hardcoded here: l2co's own ``"l2co"`` strategy self-registers via
-# ``register_optimizer`` from ``l2co._src.meta_optimizer`` (a side effect of
+# Meta-optimizers are NOT hardcoded here: l2co's own ``"l2co"`` strategy
+# self-registers via ``register_optimizer`` from
+# ``l2co._src.meta_optimizer`` (a side effect of
 # ``import l2co``), exactly the way importing ``rl2co`` registers ``"rl2co"``.
 # Keeping this back-edge out of the registry is what breaks the
 # ``l2co_update -> strategy_wrapper -> optimizer registry`` import cycle — see

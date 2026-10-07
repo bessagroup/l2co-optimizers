@@ -31,6 +31,13 @@ brief:
   step, as every other entry does. The line searches compare against a
   loss cached from the previous step, so on such a loss they compare two
   different functions; that is accepted, not corrected.
+* **Two Nelder--Mead workarounds** for optimistix 0.1.0: the population
+  is injected as the simplex with ``eqx.tree_at`` (its ``y0_simplex``
+  option rejects every n > 1, and its default simplex is degenerate for
+  n >= 3), and after every step the best/worst vectors are re-read from
+  the updated simplex (upstream reads them from the pre-update one, so
+  they go stale; uncorrected, 5-D Rosenbrock stalls). Neither changes
+  what is evaluated or billed.
 * **No switching.** None of the four has an ``optimizer_parts``
   representation: optimistix solvers evaluate the objective themselves,
   which fits neither ``GradientParts`` nor ``PopulationParts``.
@@ -97,9 +104,7 @@ OPTIMISTIX_OPTIMIZERS: frozenset[str] = frozenset(
 # =============================================================================
 
 
-def _project(
-    y: PyTree, bounded: tuple[float | None, float | None]
-) -> PyTree:
+def _project(y: PyTree, bounded: tuple[float | None, float | None]) -> PyTree:
     """Clip every leaf of ``y`` into ``bounded``."""
     return jax.tree.map(lambda x: jnp.clip(x, *bounded), y)
 
@@ -491,6 +496,31 @@ def nonlinearcg_update(
 # =============================================================================
 
 
+def _reindex_best_and_worst(state: PyTree) -> PyTree:
+    """Make ``state.best`` / ``state.worst`` hold the vertices they name.
+
+    optimistix 0.1.0 computes the best and worst *indices* from the
+    updated simplex but reads the *vectors* at those indices out of the
+    pre-update simplex, so after a vertex replacement or a shrink they
+    can point at a vertex that no longer exists -- e.g. the best vector
+    becomes the old worst vertex. The next step then compares against
+    and shrinks toward the wrong point. Re-reading both vectors from the
+    updated simplex restores what the indices (and the stored losses)
+    already describe; it evaluates nothing.
+    """
+    _, _, best_index = state.best
+    _, _, worst_index = state.worst
+
+    def pick(index):
+        return jax.tree.map(lambda x: x[index], state.simplex)
+
+    return eqx.tree_at(
+        lambda s: (s.best[1], s.worst[1]),
+        state,
+        (pick(best_index), pick(worst_index)),
+    )
+
+
 class NelderMeadUpdateClass(UpdateClass):
     """``UpdateClass`` that runs realizations one at a time.
 
@@ -518,7 +548,9 @@ def neldermead_update(
     :class:`optimistix.NelderMead` with the population as its simplex:
     ``popsize`` is the dimensionality plus one, and the initial
     population drawn by the sampler is the initial simplex. It takes no
-    hyperparameters.
+    hyperparameters. After every step the state's best and worst vectors
+    are re-read from the updated simplex (:func:`_reindex_best_and_worst`),
+    correcting an optimistix 0.1.0 indexing bug.
 
     Parameters
     ----------
@@ -581,6 +613,7 @@ def neldermead_update(
             opt_state,
             frozenset(),
         )
+        new_state = _reindex_best_and_worst(new_state)
 
         # optimistix evaluates the whole simplex on its first pass, two
         # vertices on every later step, and the whole simplex again when

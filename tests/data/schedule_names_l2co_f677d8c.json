@@ -365,6 +365,24 @@
    16634079
   ]
  ],
+ "optimistix": [
+  [
+   "bfgs",
+   9642196
+  ],
+  [
+   "dfp",
+   6857116
+  ],
+  [
+   "nonlinearcg",
+   15398246
+  ],
+  [
+   "neldermead",
+   15375163
+  ]
+ ],
  "pde": [
   [
    "adam_learning_rate=0.001",

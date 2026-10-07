@@ -33,6 +33,7 @@ To run an optimizer on an `l2co_tasks.Task` over a full budget, with batching, r
 
 The package ships ready-made `optimizers` config groups under `l2co_optimizers/conf/optimizers/`, installed as package data. Each YAML is a list of `OptimizationStep` specs:
 - **single-optimizer sweeps:** `adam`, `sepcmaes`, `lr_sweep_pde`;
+- **the optimistix minimisers at their defaults (plain runs only):** `optimistix`;
 - **the portfolios used across the L2CO studies:** `small`, `medium`, `standard`, `standard_no_stopping`, `all`;
 - **curated menus:** `headroom4`, `contrast`, `two_functions`, `gaussian_classification`, `pde`, `supercompressible`.
 

@@ -1,0 +1,10 @@
+# The optimistix minimisers at their defaults (ADR 0001). Plain-run
+# entries only: they cannot appear in a switching menu.
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: bfgs
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: dfp
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: nonlinearcg
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: neldermead

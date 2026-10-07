@@ -14,7 +14,7 @@ The whole public surface is the flat `l2co_optimizers` namespace. It holds what 
 
 ### Per-library registries
 
-`optimizers` is the merge of one name -> factory dict per library. The ones l2co groups its plot categories by are exported on their own: `optax_mapping`, `normalized_evosax` (the normalized-name -> evosax class table), `normalized_optax_normal`, `lbfgs_mapping`, `shade_mapping`, `turbo_mapping` and `rbf_trust_region_mapping`.
+`optimizers` is the merge of one name -> factory dict per library. The ones l2co groups its plot categories by are exported on their own: `optax_mapping`, `normalized_evosax` (the normalized-name -> evosax class table), `normalized_optax_normal`, `lbfgs_mapping`, `shade_mapping`, `turbo_mapping` and `rbf_trust_region_mapping`. The optimistix minimisers (`bfgs`, `dfp`, `nonlinearcg`, `neldermead`) are reached by name only; their mapping stays private. They are plain-run entries: `optimizer_parts` refuses them, so they cannot sit in a switching menu ([ADR 0001](https://github.com/bessagroup/l2co-optimizers/blob/develop/docs/adr/0001-optimistix-minimisers-as-plain-run-entries.md)).
 
 ## Running an optimizer
 

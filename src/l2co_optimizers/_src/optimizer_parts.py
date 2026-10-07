@@ -60,6 +60,9 @@ from l2co_optimizers._src.optax_implementations import (
     normalized_optax_from_state,
     normalized_optax_normal,
 )
+from l2co_optimizers._src.optimistix_implementations import (
+    OPTIMISTIX_OPTIMIZERS,
+)
 from l2co_optimizers._src.rbf_trust_region import RBFTrustRegion
 from l2co_optimizers._src.shade import SHADE
 from l2co_optimizers._src.turbo import TuRBO
@@ -332,7 +335,9 @@ def optimizer_parts(
     Raises
     ------
     ValueError
-        If ``opt_step.optimizer`` is not found in any of the registries.
+        If ``opt_step.optimizer`` is not found in any of the registries,
+        including when it names one of the optimistix minimisers, which
+        have no parts representation (ADR 0001).
     """
     name = normalize_key(opt_step.optimizer)
     hyperparams = dict(opt_step.hyperparameters)
@@ -541,6 +546,16 @@ def optimizer_parts(
             transfer_read_fn=read_fn,
             transfer_write_fn=write_fn,
             own_ask=spec.own_ask,
+        )
+
+    if name in OPTIMISTIX_OPTIMIZERS:
+        raise ValueError(
+            f"Optimizer {opt_step.optimizer!r} is an optimistix minimiser, "
+            f"which cannot be unpacked into parts: it evaluates the "
+            f"objective itself, so it is neither an optax transform "
+            f"(GradientParts) nor an ask/tell population (PopulationParts). "
+            f"It runs only as a plain registry entry, not inside a "
+            f"switching menu (ADR 0001)."
         )
 
     raise ValueError(

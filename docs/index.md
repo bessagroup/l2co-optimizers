@@ -54,6 +54,9 @@ Every optimizer below is built by name through `optimizer_mapping(name)`. Names 
 | `sm3` | SM3 | Gradient | optax |
 | `yogi` | Yogi | Gradient | optax |
 | `lbfgs` | L-BFGS, with a fresh PRNG key per linesearch evaluation on stochastic objectives | Quasi-Newton | optax + built-in |
+| `bfgs` | BFGS with a backtracking Armijo line search | Quasi-Newton | optimistix |
+| `dfp` | DFP with a backtracking Armijo line search | Quasi-Newton | optimistix |
+| `nonlinearcg` | Nonlinear conjugate gradient (Polak-Ribiere by default; Fletcher-Reeves, Hestenes-Stiefel, Dai-Yuan) with a backtracking Armijo line search | Gradient | optimistix |
 | `ars` | Augmented Random Search | Distribution-based | evosax |
 | `asebo` | ASEBO | Distribution-based | evosax |
 | `cmaes` | CMA-ES | Distribution-based | evosax |
@@ -84,9 +87,12 @@ Every optimizer below is built by name through `optimizer_mapping(name)`. Names 
 | `pso` | Particle Swarm Optimization | Population-based | evosax |
 | `samrga` | SAMR-GA | Population-based | evosax |
 | `simplega` | Simple GA | Population-based | evosax |
+| `neldermead` | Nelder-Mead downhill simplex; the population is the simplex (dimensionality + 1 vertices) | Population-based | optimistix |
 | `shade` | SHADE, with optional turning-based mutation (Tanabe & Fukunaga 2013; Sun et al. 2020) | Population-based | built-in (evosax API) |
 | `turbo` | TuRBO trust-region Bayesian optimization (Eriksson et al. 2019) | Model-based | built-in |
 | `rbf_trust_region` | RBF-surrogate trust-region search (ORBIT / DYCORS family) | Model-based | built-in |
 | `randomsearch` | One-shot random search | Random | built-in |
+
+The four optimistix entries (`bfgs`, `dfp`, `nonlinearcg`, `neldermead`) run as plain registry entries only: they evaluate the objective themselves, so `optimizer_parts` cannot unpack them into a switching menu. They bill the evaluations optimistix actually makes (one per step for the gradient solvers; for Nelder-Mead `n + 1` on the first step, 2 per step and `n + 3` on a shrink), never stop early on their own convergence test, and clip into `bounded` before each evaluation. See [ADR 0001](https://github.com/bessagroup/l2co-optimizers/blob/develop/docs/adr/0001-optimistix-minimisers-as-plain-run-entries.md).
 
 To add your own optimizer to the registry, see [Register your own optimizer](register_optimizer.ipynb).
