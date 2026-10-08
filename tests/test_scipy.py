@@ -1,8 +1,9 @@
-"""Unit tests for the scipy registry entries (ADRs 0002, 0003).
+"""Unit tests for the scipy registry entries (ADRs 0002, 0003, 0006).
 
-``"cobyqa"``, ``"powell"``, ``"tnc"``, ``"trustkrylov"``, ``"slsqp"`` and
-``"trustconstr"`` hand a whole run to :func:`scipy.optimize.minimize`
-inside one host callback. The properties checked:
+``"cobyqa"``, ``"powell"``, ``"tnc"``, ``"trustkrylov"``, ``"slsqp"``,
+``"trustconstr"`` and ``"lbfgsb"`` hand a whole run to
+:func:`scipy.optimize.minimize` inside one host callback. The properties
+checked:
 
 1. the wrapper is transparent -- its evaluations are the ones a direct
    ``scipy.optimize.minimize`` call makes, until scipy stops;
@@ -46,6 +47,8 @@ from l2co_optimizers._src.core.state_transfer import transfer_spec_for
 from l2co_optimizers._src.mapping import optimizer_mapping, optimizers
 from l2co_optimizers._src.scipy_implementations import (
     _COBYQA_FINAL_TR_RADIUS,
+    _LBFGSB_FTOL,
+    _LBFGSB_GTOL,
     _POWELL_FTOL,
     _POWELL_XTOL,
     _SLSQP_FTOL,
@@ -60,6 +63,7 @@ from l2co_optimizers._src.scipy_implementations import (
     ScipyUpdateClass,
     _scipy_update,
     cobyqa_update,
+    lbfgsb_update,
     powell_update,
     slsqp_update,
     tnc_update,
@@ -76,8 +80,16 @@ __credits__ = ["Martin van der Schelling"]
 __status__ = "Stable"
 # =============================================================================
 
-NAMES = ("cobyqa", "powell", "tnc", "trustkrylov", "slsqp", "trustconstr")
-NATIVE_BOUNDS = ("cobyqa", "powell", "tnc", "slsqp", "trustconstr")
+NAMES = (
+    "cobyqa",
+    "powell",
+    "tnc",
+    "trustkrylov",
+    "slsqp",
+    "trustconstr",
+    "lbfgsb",
+)
+NATIVE_BOUNDS = ("cobyqa", "powell", "tnc", "slsqp", "trustconstr", "lbfgsb")
 DIM = 3
 
 
@@ -153,6 +165,7 @@ def _counting(loss_fn, calls):
         ("trustkrylov", trustkrylov_update),
         ("slsqp", slsqp_update),
         ("trustconstr", trustconstr_update),
+        ("lbfgsb", lbfgsb_update),
     ],
 )
 def test_registered_under_its_bare_name(name, factory):
@@ -162,7 +175,11 @@ def test_registered_under_its_bare_name(name, factory):
 
 @pytest.mark.parametrize(
     ("spelling", "name"),
-    [("trust-krylov", "trustkrylov"), ("trust-constr", "trustconstr")],
+    [
+        ("trust-krylov", "trustkrylov"),
+        ("trust-constr", "trustconstr"),
+        ("L-BFGS-B", "lbfgsb"),
+    ],
 )
 def test_resolves_from_its_scipy_spelling(spelling, name):
     assert optimizer_mapping(spelling) is optimizers[name]
@@ -220,6 +237,19 @@ def _direct_scipy(name, loss_fn, x0):
             jac=True,
             method="SLSQP",
             options=dict(ftol=_SLSQP_FTOL, maxiter=_UNREACHABLE),
+        )
+    elif name == "lbfgsb":
+        so.minimize(
+            fg,
+            x0,
+            jac=True,
+            method="L-BFGS-B",
+            options=dict(
+                ftol=_LBFGSB_FTOL,
+                gtol=_LBFGSB_GTOL,
+                maxfun=_UNREACHABLE,
+                maxiter=_UNREACHABLE,
+            ),
         )
     elif name == "trustconstr":
         so.minimize(
@@ -346,7 +376,7 @@ def test_best_is_the_lowest_evaluation(name):
 
 
 @pytest.mark.parametrize(
-    "name", ["cobyqa", "tnc", "trustkrylov", "trustconstr"]
+    "name", ["cobyqa", "tnc", "trustkrylov", "trustconstr", "lbfgsb"]
 )
 def test_final_point_is_re_evaluated_until_the_budget(name):
     calls = []
@@ -584,6 +614,8 @@ def test_batches_are_drawn_as_the_run_loop_draws_them():
         ("trustkrylov", {"initial_trust_radius": 0.05}),
         ("trustkrylov", {"max_trust_radius": 0.1}),
         ("trustconstr", {"initial_tr_radius": 0.05}),
+        ("lbfgsb", {"maxcor": 1}),
+        ("lbfgsb", {"maxls": 1}),
     ],
 )
 def test_hyperparameters_change_the_run(name, hp):
@@ -631,6 +663,10 @@ def test_hyperparameters_change_the_run(name, hp):
             "initial_barrier_tolerance",
             0.5,
         ),
+        ("lbfgsb", {"maxcor": 3}, "maxcor", 3),
+        ("lbfgsb", {"maxls": 7}, "maxls", 7),
+        ("lbfgsb", {}, "maxcor", 10),
+        ("lbfgsb", {}, "maxls", 20),
     ],
 )
 def test_hyperparameters_reach_scipy(monkeypatch, name, hp, option, value):
@@ -646,6 +682,14 @@ def test_hyperparameters_reach_scipy(monkeypatch, name, hp, option, value):
     )
     _run(_build(name, **hp), 20)
     assert seen and seen[0][option] == value
+
+
+@pytest.mark.parametrize("hp", [{"maxcor": 0}, {"maxls": 0}])
+def test_lbfgsb_refuses_settings_scipy_would_raise_on(hp):
+    """Raised at construction, not mid-run, where it would look like a
+    failed run."""
+    with pytest.raises(ValueError, match="maxcor"):
+        _build("lbfgsb", **hp)
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -730,6 +774,7 @@ def test_batch_run_maps_its_own_run_over_realizations(name):
         ("trustkrylov", FAMILY_GRADIENT),
         ("slsqp", FAMILY_GRADIENT),
         ("trustconstr", FAMILY_GRADIENT),
+        ("lbfgsb", FAMILY_GRADIENT),
     ],
 )
 def test_family(name, family):
