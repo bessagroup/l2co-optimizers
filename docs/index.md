@@ -60,9 +60,9 @@ Every optimizer below is built by name through `optimizer_mapping(name)`. Names 
 | `tnc` | Truncated Newton (TNC): a line-search Newton method on finite-difference Hessian-vector products | Newton-type | scipy |
 | `trustkrylov` | Newton trust region with a Krylov (GLTR) subproblem solver; Hessian-vector products by finite differences of gradients | Newton-type | scipy |
 | `slsqp` | Sequential least-squares quadratic programming (SLSQP): SQP with a dense BFGS Hessian and an L1 merit line search | Quasi-Newton | scipy |
-| `trustconstr` | trust-constr: trust-region SQP (an interior-point method when there is a box) with a dense BFGS Hessian | Quasi-Newton | scipy |
+| `trustconstr` | trust-constr: trust-region SQP (an interior-point method when there is a box) with a dense BFGS Hessian, or the exact Hessian with `hessian="exact"` | Quasi-Newton | scipy |
 | `lbfgsb` | L-BFGS-B: limited-memory BFGS with a Moré–Thuente line search and bounds handled inside the method (gradient projection) | Quasi-Newton | scipy |
-| `ipopt` | IPOPT: primal-dual interior point with a filter line search and a limited-memory quasi-Newton Hessian (Wächter & Biegler 2006) | Quasi-Newton | IPOPT, through casadi |
+| `ipopt` | IPOPT: primal-dual interior point with a filter line search and a limited-memory quasi-Newton Hessian, or the exact Hessian with `hessian="exact"` (Wächter & Biegler 2006) | Quasi-Newton | IPOPT, through casadi |
 | `ars` | Augmented Random Search | Distribution-based | evosax |
 | `asebo` | ASEBO | Distribution-based | evosax |
 | `cmaes` | CMA-ES | Distribution-based | evosax |
@@ -105,7 +105,7 @@ The four optimistix entries (`bfgs`, `dfp`, `nonlinearcg`, `neldermead`) run as 
 
 The seven scipy entries (`cobyqa`, `powell`, `tnc`, `trustkrylov`, `slsqp`, `trustconstr`, `lbfgsb`) are plain registry entries too, for a different reason: scipy owns the optimization loop, so each run hands its whole budget to `scipy.optimize.minimize` inside one host callback. One iteration is one evaluation (value, or value and gradient), billed one. When scipy finishes before the budget, every remaining iteration re-evaluates its final point; if scipy fails, the run stays at the best point found. A `stop_fn` raises. See [ADR 0002](https://github.com/bessagroup/l2co-optimizers/blob/develop/docs/adr/0002-scipy-minimisers-as-whole-run-callback-entries.md), and [ADR 0003](https://github.com/bessagroup/l2co-optimizers/blob/develop/docs/adr/0003-nlp-solvers-as-host-callback-entries.md) for SLSQP and trust-constr, and [ADR 0006](https://github.com/bessagroup/l2co-optimizers/blob/develop/docs/adr/0006-l-bfgs-b-as-a-named-baseline.md) for L-BFGS-B.
 
-`ipopt` runs the same way, on the same driver, through casadi, whose wheels bundle IPOPT. IPOPT uses its own limited-memory quasi-Newton Hessian, and a value request and a gradient request at the same point are one evaluation. See [ADR 0003](https://github.com/bessagroup/l2co-optimizers/blob/develop/docs/adr/0003-nlp-solvers-as-host-callback-entries.md).
+`ipopt` runs the same way, on the same driver, through casadi, whose wheels bundle IPOPT. IPOPT uses its own limited-memory quasi-Newton Hessian, and a value request and a gradient request at the same point are one evaluation. See [ADR 0003](https://github.com/bessagroup/l2co-optimizers/blob/develop/docs/adr/0003-nlp-solvers-as-host-callback-entries.md). With `hessian="exact"`, `ipopt` and `trustconstr` use `jax.hessian` of the loss instead, taken on the sample its point was evaluated with; each Hessian is one billed evaluation. A loss computed outside JAX must supply its own Hessian (l2co-tasks ADR 0005). See [ADR 0007](https://github.com/bessagroup/l2co-optimizers/blob/develop/docs/adr/0007-exact-hessians-for-ipopt-and-trustconstr.md).
 
 Three of these get expensive in high dimensions. COBYQA's cost per evaluation grows steeply with the dimensionality, and SLSQP's and trust-constr's do from about a thousand dimensions, so high-dimensional runs of these three can exceed a cluster's wall-clock limit.
 
