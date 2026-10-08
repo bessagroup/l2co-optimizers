@@ -22,8 +22,16 @@ brief:
   (``y_eval``, rejected line-search trials included), the loss there,
   and the gradient there when the step was accepted -- NaN when it was
   rejected, since optimistix only forms the gradient on acceptance.
+  ``bfgs`` with ``linesearch="wolfe"`` forms it at every point, and
+  records it at every point.
   Nelder--Mead records the post-step simplex and its losses, with NaN
   gradients.
+* **A strong-Wolfe BFGS** (ADR 0005). ``bfgs`` takes
+  ``linesearch="wolfe"`` for scipy's BFGS line search (Moré--Thuente,
+  :mod:`more_thuente`). optimistix hands a search only the loss at the
+  point it evaluated, so :class:`WolfeBFGS` overrides the solver's
+  ``step`` to give the search the slope there as well. The default stays
+  Armijo backtracking, so existing ``bfgs`` runs are unchanged.
 * **Bounds** are applied by projecting inside the objective, so every
   point the loss sees, and every point the history records, lies in the
   box; the solver's own state keeps the unprojected iterate.
@@ -59,9 +67,10 @@ import jax.numpy as jnp
 import jax.random as jr
 import optimistix as optx
 from jax.tree_util import Partial
-from jaxtyping import Array, Bool, PRNGKeyArray, PyTree, Scalar
+from jaxtyping import Array, Bool, Int, PRNGKeyArray, PyTree, Scalar
 
 # Local
+from l2co_optimizers._src import more_thuente
 from l2co_optimizers._src.core.opt_history import OptHistory
 from l2co_optimizers._src.core.popsize import count_parameters
 from l2co_optimizers._src.core.state_transfer import (
@@ -224,6 +233,405 @@ def _armijo(
     )
 
 
+#                                                          Strong-Wolfe BFGS
+# =============================================================================
+
+#: The constants of the line search behind
+#: ``scipy.optimize.minimize(method="BFGS")``: ``line_search_wolfe1``'s
+#: ``c1``, ``c2`` and ``xtol``.
+_WOLFE_CONSTANTS = {"ftol": 1e-4, "gtol": 0.9, "xtol": 1e-14}
+
+#: Evaluations one search may take, as in scipy's
+#: ``scalar_search_wolfe1``.
+_WOLFE_MAX_EVALS = 100
+
+#: The step bounds scipy's BFGS passes to its line search.
+_WOLFE_STEP_BOUNDS = (1e-100, 1e100)
+
+
+def _step_bounds(dtype: Any) -> tuple[float, float]:
+    """scipy's step bounds, narrowed so a product of two steps is finite.
+
+    In float64 they are scipy's own. In float32 ``1e100`` is infinite, so
+    both bounds are pulled in to the square roots of the smallest normal
+    and the largest finite number.
+    """
+    finfo = jnp.finfo(dtype)
+    low, high = _WOLFE_STEP_BOUNDS
+    return max(low, float(finfo.tiny) ** 0.5), min(
+        high, float(finfo.max) ** 0.5
+    )
+
+
+def _tree_dot(a: PyTree, b: PyTree) -> Scalar:
+    """The inner product of two pytrees of the same structure."""
+    return sum(jax.tree.leaves(jax.tree.map(jnp.vdot, a, b)), jnp.array(0.0))
+
+
+def _tree_outer(a: PyTree, b: PyTree) -> PyTree:
+    """``a b^T`` as a pytree of pytrees, the layout of a pytree operator."""
+    return jax.tree.map(
+        lambda x: jax.tree.map(lambda z: jnp.tensordot(x, z, axes=0), b), a
+    )
+
+
+def _tree_where(pred: Bool[Array, ""], true: PyTree, false: PyTree) -> PyTree:
+    """Select between two pytrees of the same structure, leaf by leaf."""
+    return jax.tree.map(lambda t, f: jnp.where(pred, t, f), true, false)
+
+
+class WolfeSearchState(eqx.Module):
+    """Line-search state of :class:`WolfeBFGS`.
+
+    ``f_eval`` and ``accept`` mirror :class:`RecordingSearch`'s state, so
+    :func:`_gradient_solver_update` reads both solvers' history the same
+    way.
+
+    Attributes
+    ----------
+    line : more_thuente.MoreThuenteState
+        The Moré--Thuente search in progress.
+    stp : Scalar
+        Step, along the current direction, of the point being evaluated.
+    f_prev : Scalar
+        Loss at the accepted point before the current one: scipy's
+        ``old_old_fval``, which sets each search's first trial step.
+    n_evals : Int[Array, ""]
+        Evaluations the current search has made.
+    idle : Bool[Array, ""]
+        Whether the point being evaluated is the accepted point itself,
+        because not even steepest descent goes downhill from it.
+    f_eval : Scalar
+        Loss at the point the last step evaluated.
+    grad_eval : PyTree
+        Gradient there.
+    accept : Bool[Array, ""]
+        Whether the last step accepted that point.
+    """
+
+    line: more_thuente.MoreThuenteState
+    stp: Scalar
+    f_prev: Scalar
+    n_evals: Int[Array, ""]
+    idle: Bool[Array, ""]
+    f_eval: Scalar
+    grad_eval: PyTree
+    accept: Bool[Array, ""]
+
+
+class WolfeSearch(eqx.Module):
+    """Builds :class:`WolfeBFGS`'s initial search state.
+
+    It has no settings: the constants are scipy's, in
+    ``_WOLFE_CONSTANTS``. :meth:`WolfeBFGS.step` runs the search itself,
+    because optimistix hands a search only the loss at the point it
+    evaluated, and the strong Wolfe conditions also need the slope there.
+    """
+
+    def init(self, y: PyTree, f_info_struct: Any) -> WolfeSearchState:
+        dtype = f_info_struct.f.dtype
+        low, high = _step_bounds(dtype)
+        nan = jnp.full((), jnp.nan, dtype)
+        # A placeholder: the first step always starts a fresh search.
+        line, _ = more_thuente.start(
+            1.0,
+            jnp.zeros((), dtype),
+            -1.0,
+            ftol=_WOLFE_CONSTANTS["ftol"],
+            stpmin=low,
+            stpmax=high,
+        )
+        return WolfeSearchState(
+            line=line,
+            stp=jnp.ones((), dtype),
+            f_prev=nan,
+            n_evals=jnp.array(0),
+            idle=jnp.array(False),
+            f_eval=nan,
+            grad_eval=jax.tree.map(lambda x: jnp.full_like(x, jnp.nan), y),
+            accept=jnp.array(False),
+        )
+
+
+class WolfeBFGS(optx.AbstractBFGS):
+    """BFGS with scipy's strong-Wolfe line search, one evaluation a step.
+
+    ``scipy.optimize.minimize(method="BFGS")`` made steppable (ADR 0005).
+    Each :meth:`step` evaluates one point, value and gradient together,
+    and feeds it to a Moré--Thuente search (:mod:`more_thuente`) with
+    scipy's constants and first-trial-step rule. While scipy's search
+    succeeds, the points evaluated are scipy's.
+
+    Where scipy would stop, a run here goes on to its budget:
+
+    * a search that fails -- a warning from the search, 100 evaluations,
+      or a non-finite next step -- accepts its last point if that point
+      lowered the loss, and otherwise resets the Hessian estimate to the
+      identity and starts again from the accepted point;
+    * a direction that does not go downhill is replaced by steepest
+      descent; when even that does not go downhill (a zero or non-finite
+      gradient), every step re-evaluates the accepted point;
+    * a non-finite loss or slope at a trial halves the step towards the
+      best step of the search, without updating the search.
+
+    The estimate is updated whenever the curvature ``s^T y`` is positive.
+    optimistix's own update skips any ``s^T y`` below the dtype's
+    epsilon, which in float32 stops it from updating near any optimum.
+
+    Attributes
+    ----------
+    rtol, atol, norm, verbose
+        Unused: a run never asks the solver to terminate. Taken from
+        :class:`optimistix.BFGS` so the solver reads like one.
+    use_inverse : bool
+        Whether to approximate the inverse Hessian rather than the
+        Hessian.
+    descent : optimistix.NewtonDescent
+        The quasi-Newton direction, as in :class:`optimistix.BFGS`.
+    search : WolfeSearch
+        Builds the search state; see :meth:`step`.
+    """
+
+    rtol: float
+    atol: float
+    norm: Callable[[PyTree], Scalar]
+    use_inverse: bool
+    descent: optx.NewtonDescent
+    search: WolfeSearch
+    verbose: Callable[..., None]
+
+    def __init__(self, use_inverse: bool = True):
+        stock = optx.BFGS(
+            rtol=_UNUSED_TOL, atol=_UNUSED_TOL, use_inverse=use_inverse
+        )
+        self.rtol = stock.rtol
+        self.atol = stock.atol
+        self.norm = stock.norm
+        self.use_inverse = use_inverse
+        self.descent = stock.descent
+        self.search = WolfeSearch()
+        self.verbose = stock.verbose
+
+    def _operator(self, f_info: Any) -> Any:
+        return f_info.hessian_inv if self.use_inverse else f_info.hessian
+
+    def _with_operator(self, f_info: Any, operator: Any) -> Any:
+        return eqx.tree_at(self._operator, f_info, operator)
+
+    def _reset(self, f_info: Any, y: PyTree) -> Any:
+        """``f_info`` with its Hessian estimate reset to the identity.
+
+        Only the operator's matrix changes, so the result has exactly
+        ``f_info``'s structure and the two can be selected between.
+        """
+        identity, _ = self.init_hessian(y, f_info.f, f_info.grad)
+        operator = self._operator(f_info)
+        return self._with_operator(
+            f_info,
+            eqx.tree_at(
+                lambda o: o.pytree, operator, self._operator(identity).pytree
+            ),
+        )
+
+    def update_hessian(
+        self,
+        y: PyTree,
+        y_eval: PyTree,
+        f_info: Any,
+        f_eval_info: optx.FunctionInfo.EvalGrad,
+        hessian_update_state: None,
+    ) -> tuple[Any, None]:
+        """The BFGS update, applied whenever ``s^T y`` is positive.
+
+        The formulas are :class:`optimistix.AbstractBFGS`'s; only the
+        threshold differs (positive, not above the dtype's epsilon).
+        """
+        grad = f_eval_info.grad
+        s = jax.tree.map(jnp.subtract, y_eval, y)
+        d = jax.tree.map(jnp.subtract, grad, f_info.grad)
+        inner = _tree_dot(d, s)
+        operator = self._operator(f_info)
+        if self.use_inverse:
+            hd = operator.mv(d)
+            scale = (inner + _tree_dot(d, hd)) / inner**2
+            matrix = jax.tree.map(
+                lambda m, ss, hs, sh: m + scale * ss - (hs + sh) / inner,
+                operator.pytree,
+                _tree_outer(s, s),
+                _tree_outer(hd, s),
+                _tree_outer(s, hd),
+            )
+        else:
+            bs = operator.mv(s)
+            curvature = _tree_dot(s, bs)
+            matrix = jax.tree.map(
+                lambda m, dd, bb: m + dd / inner - bb / curvature,
+                operator.pytree,
+                _tree_outer(d, d),
+                _tree_outer(bs, bs),
+            )
+        updated = eqx.tree_at(lambda o: o.pytree, operator, matrix)
+        operator = _tree_where(inner > 0, updated, operator)
+        return type(f_info)(f_eval_info.f, grad, operator), None
+
+    def step(
+        self,
+        fn: Callable,
+        y: PyTree,
+        args: PyTree,
+        options: dict[str, Any],
+        state: Any,
+        tags: frozenset[object],
+    ) -> tuple[PyTree, Any, Any]:
+        """Evaluate one point and advance the search it belongs to.
+
+        The point is ``state.y_eval``, chosen by the previous step. On
+        the first step it is the starting point, which is accepted
+        unconditionally, as optimistix does.
+        """
+        search = state.search_state
+        (f_eval, aux_eval), grad_eval = jax.value_and_grad(
+            lambda _y: fn(_y, args), has_aux=True
+        )(state.y_eval)
+        low, high = _step_bounds(f_eval.dtype)
+        bounds = {"stpmin": low, "stpmax": high}
+
+        # 1. What this evaluation means for the search it belongs to.
+        direction = jax.tree.map(jnp.negative, state.descent_state.newton)
+        slope = _tree_dot(grad_eval, direction)
+        line, stp_next, task = more_thuente.iterate(
+            search.line,
+            search.stp,
+            f_eval,
+            slope,
+            **_WOLFE_CONSTANTS,
+            **bounds,
+        )
+        n_evals = search.n_evals + 1
+        forced = state.first_step | search.idle
+        finite = jnp.isfinite(f_eval) & jnp.isfinite(slope)
+        live = ~forced & (n_evals < _WOLFE_MAX_EVALS)
+        converged = live & finite & (task == more_thuente.TASK_CONVERGENCE)
+        continuing = (
+            live
+            & finite
+            & (task == more_thuente.TASK_FG)
+            & jnp.isfinite(stp_next)
+        )
+        retry = live & ~finite
+        failed = ~forced & ~converged & ~continuing & ~retry
+        rescued = failed & finite & (f_eval < state.f_info.f)
+        accept = forced | converged | rescued
+        restart = failed & ~rescued
+        new_search = accept | restart
+
+        # 2. The point the next search starts from, and its estimate.
+        accepted, _ = self.update_hessian(
+            y,
+            state.y_eval,
+            state.f_info,
+            optx.FunctionInfo.EvalGrad(f_eval, grad_eval),
+            None,
+        )
+        f_info = _tree_where(accept, accepted, state.f_info)
+        f_info = _tree_where(restart, self._reset(f_info, y), f_info)
+        y_new = _tree_where(accept, state.y_eval, y)
+        aux = _tree_where(accept, aux_eval, state.aux)
+
+        # 3. Its direction: quasi-Newton, or steepest descent when that
+        # does not go downhill.
+        def downhill(s):
+            return jnp.isfinite(s) & (s < 0)
+
+        quasi_newton = self.descent.query(y_new, f_info, state.descent_state)
+        slope_qn = _tree_dot(
+            f_info.grad, jax.tree.map(jnp.negative, quasi_newton.newton)
+        )
+        steepest_info = self._reset(f_info, y_new)
+        steepest = self.descent.query(
+            y_new, steepest_info, state.descent_state
+        )
+        slope_sd = _tree_dot(
+            f_info.grad, jax.tree.map(jnp.negative, steepest.newton)
+        )
+        use_steepest = ~downhill(slope_qn)
+        idle = new_search & use_steepest & ~downhill(slope_sd)
+        f_info = _tree_where(new_search & use_steepest, steepest_info, f_info)
+        descent_state = _tree_where(
+            new_search,
+            _tree_where(use_steepest, steepest, quasi_newton),
+            state.descent_state,
+        )
+        slope0 = jnp.where(use_steepest, slope_sd, slope_qn)
+
+        # 4. scipy's first trial step: min(1, 2.02 (f - f_prev) / slope0),
+        # with f_prev = f + |g| / 2 on the very first search.
+        f_prev = jnp.where(
+            accept,
+            jnp.where(
+                state.first_step,
+                f_eval + optx.two_norm(grad_eval) / 2,
+                state.f_info.f,
+            ),
+            search.f_prev,
+        )
+        alpha1 = jnp.minimum(1.0, 1.01 * 2 * (f_info.f - f_prev) / slope0)
+        alpha1 = jnp.where(jnp.isfinite(alpha1) & (alpha1 >= low), alpha1, 1.0)
+        fresh_line, _ = more_thuente.start(
+            alpha1,
+            f_info.f,
+            slope0,
+            ftol=_WOLFE_CONSTANTS["ftol"],
+            **bounds,
+        )
+
+        # 5. The next point to evaluate.
+        halfway = search.line.stx + 0.5 * (search.stp - search.line.stx)
+        stp = jnp.where(
+            new_search,
+            jnp.where(idle, 0.0, alpha1),
+            jnp.where(continuing, stp_next, halfway),
+        ).astype(f_eval.dtype)
+        line = _tree_where(
+            new_search,
+            fresh_line,
+            _tree_where(continuing, line, search.line),
+        )
+        step, _ = self.descent.step(stp, descent_state)
+        y_eval = _tree_where(idle, y_new, jax.tree.map(jnp.add, y_new, step))
+
+        search_state = WolfeSearchState(
+            line=line,
+            stp=stp,
+            f_prev=f_prev,
+            n_evals=jnp.where(new_search, 0, n_evals),
+            idle=idle,
+            f_eval=f_eval,
+            grad_eval=grad_eval,
+            accept=accept,
+        )
+        state = eqx.tree_at(
+            lambda s: (
+                s.first_step,
+                s.y_eval,
+                s.search_state,
+                s.f_info,
+                s.descent_state,
+                s.num_accepted_steps,
+            ),
+            state,
+            (
+                jnp.array(False),
+                y_eval,
+                search_state,
+                f_info,
+                descent_state,
+                state.num_accepted_steps + accept,
+            ),
+        )
+        return y_new, state, aux
+
+
 #                                                          Gradient solvers
 # =============================================================================
 
@@ -254,12 +662,16 @@ def _gradient_solver_update(
     opt_hash: int,
     bounded: tuple[float | None, float | None] | None,
     stop_fn: StopFunction | None,
+    trial_gradients: bool = False,
 ) -> UpdateClass:
     """Wrap a gradient-based optimistix ``solver`` into an ``UpdateClass``.
 
-    ``solver``'s search must be a :class:`RecordingSearch`. The
+    ``solver``'s search state must carry ``f_eval`` and ``accept``, as
+    :class:`RecordingSearch`'s and :class:`WolfeSearchState` do. The
     population is a single point (``popsize == 1``); each step bills one
-    evaluation.
+    evaluation. With ``trial_gradients`` the history records the
+    gradient at every evaluated point, from the search state's
+    ``grad_eval``; otherwise only on accepted steps, NaN on rejected ones.
     """
     if bounded is None:
         bounded = (None, None)
@@ -297,12 +709,15 @@ def _gradient_solver_update(
         )
 
         search_state = solver_state.search_state
-        # On acceptance ``f_info`` is the evaluation at ``y_eval``; on
-        # rejection it still describes the previous accepted point.
-        grads = jax.tree.map(
-            lambda g: jnp.where(search_state.accept, g, jnp.nan),
-            solver_state.f_info.grad,
-        )
+        if trial_gradients:
+            grads = search_state.grad_eval
+        else:
+            # On acceptance ``f_info`` is the evaluation at ``y_eval``; on
+            # rejection it still describes the previous accepted point.
+            grads = jax.tree.map(
+                lambda g: jnp.where(search_state.accept, g, jnp.nan),
+                solver_state.f_info.grad,
+            )
 
         history = OptHistory(
             loss=jnp.expand_dims(search_state.f_eval, 0),
@@ -338,13 +753,18 @@ def bfgs_update(
     bounded: tuple[float | None, float | None] | None = (None, None),
     stop_fn: StopFunction | None = None,
     use_inverse: bool = True,
-    decrease_factor: float = 0.5,
-    slope: float = 0.1,
-    step_init: float = 1.0,
+    linesearch: str = "armijo",
+    decrease_factor: float | None = None,
+    slope: float | None = None,
+    step_init: float | None = None,
 ) -> UpdateClass:
     """Construct the ``UpdateClass`` behind ``optimizer="bfgs"``.
 
-    :class:`optimistix.BFGS` with its backtracking Armijo line search.
+    With ``linesearch="armijo"`` (the default), :class:`optimistix.BFGS`
+    with its backtracking Armijo line search. With ``"wolfe"``,
+    :class:`WolfeBFGS`: scipy's BFGS, with its strong-Wolfe
+    (Moré--Thuente) line search, made steppable (ADR 0005). Either way a
+    step evaluates one point.
 
     Parameters
     ----------
@@ -368,23 +788,62 @@ def bfgs_update(
     use_inverse : bool, optional
         Approximate the inverse Hessian (the default) rather than the
         Hessian.
-    decrease_factor : float, optional
-        Line-search backtracking rate, in ``(0, 1)``.
-    slope : float, optional
-        Armijo sufficient-decrease slope, in ``(0, 1)``.
-    step_init : float, optional
-        First trial step size of each line search, ``> 0``.
+    linesearch : str, optional
+        ``"armijo"`` (default) or ``"wolfe"``. The Wolfe search has no
+        settings: its constants are scipy's (``c1=1e-4``, ``c2=0.9``).
+        It also records the gradient at every evaluated point, where the
+        Armijo search records NaN on rejected trials.
+    decrease_factor : float or None, optional
+        Armijo only: backtracking rate, in ``(0, 1)``; ``None`` means
+        0.5.
+    slope : float or None, optional
+        Armijo only: sufficient-decrease slope, in ``(0, 1)``; ``None``
+        means 0.1.
+    step_init : float or None, optional
+        Armijo only: first trial step size of each line search, ``> 0``;
+        ``None`` means 1.0.
 
     Returns
     -------
     UpdateClass
         Configured optimizer wrapper.
+
+    Raises
+    ------
+    ValueError
+        If ``linesearch`` is neither ``"armijo"`` nor ``"wolfe"``, or if
+        an Armijo setting is given with ``"wolfe"``.
     """
-    solver = eqx.tree_at(
-        lambda s: s.search,
-        optx.BFGS(rtol=_UNUSED_TOL, atol=_UNUSED_TOL, use_inverse=use_inverse),
-        _armijo(decrease_factor, slope, step_init),
-    )
+    armijo = {
+        "decrease_factor": decrease_factor,
+        "slope": slope,
+        "step_init": step_init,
+    }
+    if linesearch == "wolfe":
+        given = sorted(k for k, v in armijo.items() if v is not None)
+        if given:
+            raise ValueError(
+                f"{given} configure the Armijo line search; "
+                "linesearch='wolfe' takes none of them."
+            )
+        solver = WolfeBFGS(use_inverse=use_inverse)
+    elif linesearch == "armijo":
+        solver = eqx.tree_at(
+            lambda s: s.search,
+            optx.BFGS(
+                rtol=_UNUSED_TOL, atol=_UNUSED_TOL, use_inverse=use_inverse
+            ),
+            _armijo(
+                0.5 if decrease_factor is None else decrease_factor,
+                0.1 if slope is None else slope,
+                1.0 if step_init is None else step_init,
+            ),
+        )
+    else:
+        raise ValueError(
+            f"Unknown bfgs linesearch {linesearch!r}; expected 'armijo' "
+            "or 'wolfe'."
+        )
     return _gradient_solver_update(
         solver,
         model=model,
@@ -393,6 +852,7 @@ def bfgs_update(
         opt_hash=opt_hash,
         bounded=bounded,
         stop_fn=stop_fn,
+        trial_gradients=linesearch == "wolfe",
     )
 
 
@@ -412,7 +872,9 @@ def dfp_update(
     """Construct the ``UpdateClass`` behind ``optimizer="dfp"``.
 
     :class:`optimistix.DFP` with its backtracking Armijo line search.
-    Parameters are those of :func:`bfgs_update`.
+    Parameters are those of :func:`bfgs_update`, without ``linesearch``:
+    ``decrease_factor``, ``slope`` and ``step_init`` default to 0.5, 0.1
+    and 1.0.
 
     Returns
     -------
@@ -452,7 +914,7 @@ def nonlinearcg_update(
 
     :class:`optimistix.NonlinearCG` with a backtracking Armijo line
     search. Parameters other than ``method`` are those of
-    :func:`bfgs_update`.
+    :func:`dfp_update`.
 
     Parameters
     ----------

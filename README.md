@@ -143,7 +143,7 @@ Every optimizer below is built by name through `optimizer_mapping(name)`. Names 
 | `sm3` | SM3 | Gradient | optax |
 | `yogi` | Yogi | Gradient | optax |
 | `lbfgs` | L-BFGS, with a fresh PRNG key per linesearch evaluation on stochastic objectives | Quasi-Newton | optax + built-in |
-| `bfgs` | BFGS with a backtracking Armijo line search | Quasi-Newton | optimistix |
+| `bfgs` | BFGS with a backtracking Armijo line search, or with `linesearch="wolfe"` scipy's strong-Wolfe (Moré–Thuente) search | Quasi-Newton | optimistix + built-in |
 | `dfp` | DFP with a backtracking Armijo line search | Quasi-Newton | optimistix |
 | `nonlinearcg` | Nonlinear conjugate gradient (Polak-Ribiere by default; Fletcher-Reeves, Hestenes-Stiefel, Dai-Yuan) with a backtracking Armijo line search | Gradient | optimistix |
 | `tnc` | Truncated Newton (TNC): a line-search Newton method on finite-difference Hessian-vector products | Newton-type | scipy |
@@ -190,7 +190,7 @@ Every optimizer below is built by name through `optimizer_mapping(name)`. Names 
 | `powell` | Powell's conjugate direction method (derivative-free line searches) | Direct search | scipy |
 | `randomsearch` | One-shot random search | Random | built-in |
 
-The four optimistix entries (`bfgs`, `dfp`, `nonlinearcg`, `neldermead`) run as plain registry entries only: they evaluate the objective themselves, so `optimizer_parts` cannot unpack them into a switching menu. They bill the evaluations optimistix actually makes (one per step for the gradient solvers; for Nelder-Mead `n + 1` on the first step, 2 per step and `n + 3` on a shrink), never stop early on their own convergence test, and clip into `bounded` before each evaluation. See [ADR 0001](docs/adr/0001-optimistix-minimisers-as-plain-run-entries.md).
+The four optimistix entries (`bfgs`, `dfp`, `nonlinearcg`, `neldermead`) run as plain registry entries only: they evaluate the objective themselves, so `optimizer_parts` cannot unpack them into a switching menu. They bill the evaluations optimistix actually makes (one per step for the gradient solvers; for Nelder-Mead `n + 1` on the first step, 2 per step and `n + 3` on a shrink), never stop early on their own convergence test, and clip into `bounded` before each evaluation. See [ADR 0001](docs/adr/0001-optimistix-minimisers-as-plain-run-entries.md). `bfgs` with `linesearch="wolfe"` is scipy's BFGS made steppable: in float64 it evaluates the points scipy's BFGS evaluates, and it records the gradient at every point. See [ADR 0005](docs/adr/0005-strong-wolfe-line-search-for-bfgs.md).
 
 The seven scipy entries (`cobyqa`, `powell`, `tnc`, `trustkrylov`, `slsqp`, `trustconstr`, `lbfgsb`) are plain registry entries too, for a different reason: scipy owns the optimization loop, so each run hands its whole budget to `scipy.optimize.minimize` inside one host callback. One iteration is one evaluation (value, or value and gradient), billed one. When scipy finishes before the budget, every remaining iteration re-evaluates its final point; if scipy fails, the run stays at the best point found. A `stop_fn` raises. See [ADR 0002](docs/adr/0002-scipy-minimisers-as-whole-run-callback-entries.md), and [ADR 0003](docs/adr/0003-nlp-solvers-as-host-callback-entries.md) for SLSQP and trust-constr, and [ADR 0006](docs/adr/0006-l-bfgs-b-as-a-named-baseline.md) for L-BFGS-B.
 

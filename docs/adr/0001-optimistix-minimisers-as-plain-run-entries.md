@@ -41,7 +41,9 @@ optimistix's public `AbstractSearch` extension point and saves `f_eval` and
 the accept flag in its own state, so the value costs no second evaluation.
 The gradient is recorded when the step was accepted and is NaN otherwise:
 optimistix forms it only on acceptance, and computing it ourselves would be
-hidden work. Nelder–Mead records the post-step simplex, its losses and NaN
+hidden work. (`bfgs` with `linesearch="wolfe"` forms it at every point and
+records it there: ADR 0005.) Nelder–Mead records the post-step simplex, its
+losses and NaN
 gradients. NaN gradients are already how population entries record "not
 computed", and the grad-norm stop uses `nanmean`.
 
@@ -115,7 +117,8 @@ millisecond-scale overheads.
 **Hyperparameters.** `bfgs` and `dfp` take `use_inverse` and the Armijo
 `decrease_factor`, `slope` and `step_init`. The stock solvers hard-wire
 `BacktrackingArmijo()`, so the factories swap in the configured search with
-`eqx.tree_at`. `nonlinearcg` takes `method` (`"polak_ribiere"`,
+`eqx.tree_at`. (`bfgs` also takes `linesearch`, `"armijo"` by default or
+`"wolfe"` for scipy's strong-Wolfe search: ADR 0005.) `nonlinearcg` takes `method` (`"polak_ribiere"`,
 `"fletcher_reeves"`, `"hestenes_stiefel"` or `"dai_yuan"`) and the same
 Armijo knobs. `neldermead` takes none. All are scalars or strings, so
 `OptimizationStep` hashes stay simple. The `optimistix` config group ships
