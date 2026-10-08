@@ -180,7 +180,7 @@ uses.
 
 | Method | Reason |
 |---|---|
-| L-BFGS-B, BFGS, CG, Nelder-Mead, differential evolution | Another implementation of `lbfgs`, `bfgs`, `nonlinearcg`, `neldermead` and `differentialevolution` |
+| L-BFGS-B, BFGS, CG, Nelder-Mead, differential evolution | Another implementation of `lbfgs`, `bfgs`, `nonlinearcg`, `neldermead` and `differentialevolution` (L-BFGS-B added after all, as a named baseline: ADR 0006) |
 | SLSQP | Dense BFGS on a box-only problem (added after all, as a named baseline: ADR 0003) |
 | Newton-CG | Truncated Newton, like TNC |
 | trust-ncg | A Krylov trust region, like trust-krylov |

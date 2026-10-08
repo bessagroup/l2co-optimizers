@@ -79,7 +79,8 @@ guard: none of them was seen to loop.
 ## trust-constr
 
 - **Hessian:** scipy's default when `hess` is not given, a dense `BFGS()`,
-  passed explicitly with a fresh instance for each run.
+  passed explicitly with a fresh instance for each run. (`hessian="exact"`
+  now also offers the exact Hessian: ADR 0007.)
 - **Rejected:** finite-difference Hessian-vector products, as `trustkrylov`
   uses. They would turn the entry into the trust-ncg that ADR 0002
   rejected. SR1 is not exposed.
@@ -128,7 +129,8 @@ that never run IPOPT never pay for it.
 
 **Hessian.** IPOPT gets its own limited-memory quasi-Newton approximation.
 IPOPT needs the Hessian as a matrix, and an exact one from JAX would cost
-`d` gradients per step.
+`d` gradients per step. (Offered after all, as `hessian="exact"`: ADR
+0007.)
 
 **One evaluation per new point.** IPOPT asks for the value and the gradient
 separately, and it often asks again at the point it has just evaluated. Each
