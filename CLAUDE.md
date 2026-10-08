@@ -42,6 +42,8 @@ make docs            # uv run mkdocs build
 
 The git hook calls `pre-commit`, which is not on PATH in the devcontainer. Run `uv run --with pre-commit pre-commit run`, then `git commit --no-verify`.
 
+**Every PR runs CI** (`.github/workflows/pull_request.yml`): ruff (pinned to the pre-commit rev; bump the two together), pre-commit, `pytest -m "not slow"` on Linux/macOS x Python 3.12/3.13, the package build and the docs build, with `bessagroup/f3dasm` checked out next to the repo (the `../f3dasm` editable source) at `main` for a PR into `main` and `develop` otherwise. `build_docs.yml` builds the docs on pushes to `main`.
+
 **Releases are automated** (`.github/workflows/release.yml`, `patrick-kidger/action_update_python_project`). On every push to `main`, if the `pyproject.toml` version is newer than PyPI's, it builds, runs the tests against the sdist and the wheel (f3dasm from PyPI, via `--no-sources`), uploads to PyPI, then pushes the `v<version>` tag and creates the GitHub release. To release, bump `version` in `pyproject.toml` and `CITATION.cff` on `develop`, then merge `develop` into `main`. Never tag or `gh release create` by hand: the action's tag push fails on an existing tag, *after* the PyPI upload.
 
 ## Architecture
