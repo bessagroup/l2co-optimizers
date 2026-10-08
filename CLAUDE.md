@@ -57,6 +57,7 @@ The git hook calls `pre-commit`, which is not on PATH in the devcontainer. Run `
   - The built-ins each have their own module.
   - `UpdateClass` (`_src/core/update_class.py`) is the container plus the run loop; factories never subclass it to change how a run executes, except `RandomSearchUpdateClass` and `ScipyUpdateClass`.
 - **`bounded=None` and `stop_fn=None`** mean unbounded and never-stop. Keep that true for any new closure factory.
+- **Samplers** (`_src/core/sampler.py`, reached by name through `get_sampler`) are called as `sampler(key, params, n_samples)` by `reset` and, after a switch, by l2co's and rl2co's handshakes with the incumbent. All but one read `params` only for its shape. `relative_normal_sampling` (ADR 0004) reads the values: member 0 is exactly `params` and the rest are `x + std * max(|x|, 1) * N(0, 1)`, so a task that keeps a prescribed start as its model (CUTEst's `x0`) starts there. Called with the incumbent it duplicates it, which ADR 0004 accepts.
 - **`OptimizationStep.name`** is a databank key.
   - Resolution order: `alias`, then a namer registered with `register_schedule_namer` (meta-optimizer packages register theirs), then the generic join.
   - `tests/test_conf_optimizers.py` locks every shipped config's names and hashes against `tests/data/schedule_names_l2co_f677d8c.json`.

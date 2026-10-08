@@ -83,6 +83,10 @@ def test_all_symbols_are_importable():
         ("RecentHistory", "l2co_optimizers._src.core.opt_history"),
         ("get_sampler", "l2co_optimizers._src.core.sampler"),
         ("random_sampling", "l2co_optimizers._src.core.sampler"),
+        (
+            "relative_normal_sampling",
+            "l2co_optimizers._src.core.sampler",
+        ),
         ("count_parameters", "l2co_optimizers._src.core.popsize"),
         (
             "create_schedules_experimentdata",
