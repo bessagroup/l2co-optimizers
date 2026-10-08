@@ -80,12 +80,23 @@ __all__ = [
     "CONSTRUCTOR_HYPERPARAMETERS",
     "LINESEARCH_FEVAL_BOUND",
     "GradientParts",
+    "PLAIN_RUN_OPTIMIZERS",
     "PopulationParts",
     "l2co_native_evosax",
     "l2co_native_optax",
     "optimizer_parts",
     "resolve_popsize",
 ]
+
+#: Registry names that run only as plain registry entries (normalized). Their
+#: solver evaluates the objective itself -- an optimistix minimiser (ADR
+#: 0001), a scipy minimiser (ADR 0002), IPOPT (ADR 0003) -- so
+#: :func:`optimizer_parts` refuses them, and they can never be a sub-optimizer
+#: in a switching menu or an rl2co action. A caller assembling a menu from a
+#: configured suite leaves these out.
+PLAIN_RUN_OPTIMIZERS: frozenset[str] = (
+    OPTIMISTIX_OPTIMIZERS | SCIPY_OPTIMIZERS | IPOPT_OPTIMIZERS
+)
 
 
 # l2co-native evosax-style algorithms: absent from evosax's own
