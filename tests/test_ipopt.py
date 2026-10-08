@@ -177,7 +177,13 @@ def test_evaluations_match_a_direct_ipopt_run():
     np.testing.assert_allclose(ours[:k], direct[:k], rtol=1e-6)
 
 
-def test_repeated_requests_at_one_point_are_one_evaluation(monkeypatch):
+# From seed 1 IPOPT stops on its own at evaluation 173; from seed 2 it is
+# still moving when the 400-evaluation budget runs out. Where it stops
+# turns on its last machine-precision step, so which case a start lands
+# in can differ between platforms (seed 1 runs out on macOS CI). Both
+# cases are covered, and the claim holds in either.
+@pytest.mark.parametrize("seed", [1, 2], ids=["stops", "runs-out"])
+def test_repeated_requests_at_one_point_are_one_evaluation(monkeypatch, seed):
     """IPOPT asks for the value and the gradient separately, and often
     asks again at the point it just evaluated; each point is billed once,
     as scipy's own cache of the latest point does for the scipy entries.
@@ -192,14 +198,15 @@ def test_repeated_requests_at_one_point_are_one_evaluation(monkeypatch):
     monkeypatch.setattr(ca, "nlpsol", spy)
     calls = []
     n = 400
-    _run(_build("ipopt", _counting(_wavy, calls)), n)
+    _run(_build("ipopt", _counting(_wavy, calls)), n, params=_x0(seed=seed))
     jax.effects_barrier()
     stats = solvers[0].stats()
     moved = [i for i in range(n) if not np.array_equal(calls[i], calls[-1])]
-    stopped = moved[-1] + 1  # IPOPT's own evaluations, before the idle
-    assert stopped < n // 2
+    # Billed evaluations up to IPOPT's last new point; if it stopped before
+    # the budget, the rest of the budget repeats its final point.
+    billed = moved[-1] + 1
     assert stats["n_call_nlp_grad_f"] > 0
-    assert stopped < stats["n_call_nlp_f"]
+    assert billed < stats["n_call_nlp_f"]
 
 
 # =============================================================================
