@@ -42,6 +42,11 @@ ADR 0006; in brief:
   trust-krylov does not, so its loss is evaluated at the point projected
   into the box, with the gradient taken through the projection. In all
   seven, the history records the projected point.
+* **Exact Hessians** (ADR 0007). With ``hessian="exact"``,
+  trust-constr gets ``jax.hessian`` of the loss from
+  :meth:`_Driver.hessian`, taken on the sample its point was evaluated
+  with; each Hessian is one recorded, billed evaluation. A loss JAX cannot
+  differentiate twice is refused before the run starts.
 * **A method that stops evaluating is stopped.** trust-constr can
   iterate forever without asking for an evaluation once its steps no
   longer move ``x``; after :data:`_STALL_ITERATIONS` such iterations the
@@ -151,9 +156,10 @@ _LBFGSB_GTOL = 0.0
 #: and the run would never reach its budget.
 _STALL_ITERATIONS = 1000
 
-#: Gradients of recent non-probe evaluations kept for
-#: :func:`_fd_hessp`; the iterate a Hessian-vector product is taken at
-#: is always among the last few points scipy evaluated.
+#: Recent non-probe evaluations whose gradient (for :func:`_fd_hessp`)
+#: and sample (for an exact Hessian, ADR 0007) are kept: the iterate a
+#: Hessian or a Hessian-vector product is taken at is always among the
+#: last few points the method evaluated.
 _GRAD_CACHE_SIZE = 8
 
 _NO_STEP = (
@@ -177,6 +183,11 @@ class _NonFinitePoint(Exception):
 #: ``evaluate(x, dataset, key, batch_state) -> (loss, grad, key,
 #: batch_state)``, jitted; ``grad`` is ``None`` for a value-only method.
 Evaluator = Callable[..., tuple[Any, Any, Any, BatchState]]
+
+#: ``evaluate_hessian(x, dataset, key, batch_state) -> (loss, grad,
+#: hessian, key, batch_state)``, jitted: :data:`Evaluator` plus the
+#: exact Hessian, from the same batch and key (ADR 0007).
+HessianEvaluator = Callable[..., tuple[Any, Any, Any, Any, BatchState]]
 
 #: ``minimize(driver, x0, bounds) -> x`` -- runs one scipy method to
 #: its own end and returns its final point. ``bounds`` is a
@@ -221,6 +232,9 @@ class _Driver:
     eval_eps : float
         Machine epsilon of the dtype the loss is evaluated in (float32
         unless JAX runs in x64), which sets the finite-difference steps.
+
+    With ``evaluate_hessian`` it also serves exact Hessians
+    (:meth:`hessian`, ADR 0007).
     """
 
     def __init__(
@@ -233,8 +247,10 @@ class _Driver:
         batch_state: BatchState,
         bounded: tuple[float | None, float | None],
         eval_eps: float,
+        evaluate_hessian: HessianEvaluator | None = None,
     ):
         self._evaluate = evaluate
+        self._evaluate_hessian = evaluate_hessian
         self.eval_eps = eval_eps
         self._dataset = dataset
         self._key = key
@@ -246,6 +262,11 @@ class _Driver:
         self.best_loss = np.inf
         self.last_x = x0
         self._grads: OrderedDict[bytes, np.ndarray] = OrderedDict()
+        # The key and batch state each recent point was evaluated with,
+        # so its Hessian is taken on the same sample.
+        self._samples: OrderedDict[bytes, tuple[Any, BatchState]] = (
+            OrderedDict()
+        )
         self._count_at_iteration = 0
         self._iterations_without_eval = 0
 
@@ -257,29 +278,63 @@ class _Driver:
         self, x: np.ndarray, cache_grad: bool = True
     ) -> tuple[float, np.ndarray | None]:
         """Evaluate at ``x``, record it and bill it."""
-        if not self.budget_left:
-            raise _BudgetSpent
-        if not np.all(np.isfinite(x)):
-            raise _NonFinitePoint
+        self._check(x)
+        sample = (self._key, self.batch_state)
         f, g, self._key, self.batch_state = self._evaluate(
             jnp.asarray(x), self._dataset, self._key, self.batch_state
         )
         f = float(f)
+        if g is not None:
+            g = np.asarray(g, dtype=np.float64)
+            if cache_grad:
+                _remember(self._grads, x.tobytes(), g)
+        if self._evaluate_hessian is not None:
+            _remember(self._samples, x.tobytes(), sample)
+        self._record(x, f)
+        return f, g
+
+    def _check(self, x: np.ndarray) -> None:
+        if not self.budget_left:
+            raise _BudgetSpent
+        if not np.all(np.isfinite(x)):
+            raise _NonFinitePoint
+
+    def _record(self, x: np.ndarray, f: float) -> None:
+        """Record one billed evaluation of loss ``f`` at ``x``."""
         evaluated = np.clip(x, self._lo, self._hi)
         self.losses[self.count] = f
         self.count += 1
         self.last_x = evaluated
         if f < self.best_loss:
             self.best_loss, self.best_x = f, evaluated
-        if g is not None:
-            g = np.asarray(g, dtype=np.float64)
-            if cache_grad:
-                self._grads[x.tobytes()] = g
-                while len(self._grads) > _GRAD_CACHE_SIZE:
-                    self._grads.popitem(last=False)
         if not self.budget_left:
             raise _BudgetSpent
-        return f, g
+
+    def hessian(self, x: np.ndarray) -> np.ndarray:
+        """The exact Hessian at ``x``: one recorded, billed evaluation.
+
+        It is taken on the batch and key ``x`` was last evaluated with,
+        so on a noisy or minibatched loss it belongs to the same function
+        as that point's value and gradient. The entry records the loss
+        there, recomputed on that sample. At a point not evaluated lately
+        it is a fresh evaluation, drawing the next sample like any other.
+        (ADR 0007.)
+        """
+        x = np.asarray(x, dtype=np.float64)
+        self._check(x)
+        sample = self._samples.get(x.tobytes())
+        key, batch_state = (
+            (self._key, self.batch_state) if sample is None else sample
+        )
+        f, g, h, new_key, new_batch_state = self._evaluate_hessian(
+            jnp.asarray(x), self._dataset, key, batch_state
+        )
+        if sample is None:
+            self._key, self.batch_state = new_key, new_batch_state
+            _remember(self._samples, x.tobytes(), (key, batch_state))
+            _remember(self._grads, x.tobytes(), np.asarray(g, np.float64))
+        self._record(x, float(f))
+        return np.asarray(h, dtype=np.float64)
 
     def value(self, x: np.ndarray) -> float:
         """Objective for a derivative-free method."""
@@ -326,6 +381,13 @@ class _Driver:
             pass
 
 
+def _remember(cache: OrderedDict, key: bytes, value: Any) -> None:
+    """Store ``value`` under ``key``, keeping the last few entries."""
+    cache[key] = value
+    while len(cache) > _GRAD_CACHE_SIZE:
+        cache.popitem(last=False)
+
+
 def _fd_hessp(driver: _Driver) -> Callable[[np.ndarray, np.ndarray], Any]:
     """Finite-difference Hessian-vector products from JAX gradients.
 
@@ -367,6 +429,7 @@ def _drive(
     *,
     batch_size: int,
     dataset_size: int,
+    evaluate_hessian: HessianEvaluator | None = None,
 ) -> tuple[np.ndarray, ...]:
     """One realization, on the host: scipy, then idle to the budget.
 
@@ -395,7 +458,26 @@ def _drive(
         ),
         bounded=bounded,
         eval_eps=eval_eps,
+        evaluate_hessian=evaluate_hessian,
     )
+    if evaluate_hessian is not None:
+        # Trace the Hessian before the method starts: inside it, a loss
+        # JAX cannot differentiate twice would look like a failed run.
+        try:
+            jax.eval_shape(
+                evaluate_hessian,
+                jnp.asarray(x0),
+                driver._dataset,
+                key,
+                driver.batch_state,
+            )
+        except Exception as error:
+            raise ValueError(
+                "hessian='exact' takes jax.hessian of the loss, and this "
+                "loss cannot be differentiated twice. A loss computed "
+                "outside JAX must supply its own second derivatives "
+                f"(ADR 0007). JAX said: {error}"
+            ) from error
     bounds = None if bounded == (None, None) else so.Bounds(lo, hi)
 
     x_final: np.ndarray | None
@@ -622,16 +704,7 @@ def _make_evaluator(
     the loss (and its gradient) at the point projected into ``bounded``,
     with the gradient taken through the projection.
     """
-    model_params, static = eqx.partition(model, eqx.is_inexact_array)
-    _, unravel = ravel_pytree(model_params)
-
-    def loss_at(
-        x: Float[Array, " n"], sample: dict, key: PRNGKeyArray
-    ) -> Float[Array, ""]:
-        model_ = eqx.combine(unravel(jnp.clip(x, *bounded)), static)
-        if pass_rng:
-            return loss_fn(model_, key=key, **sample)
-        return loss_fn(model_, **sample)
+    loss_at = _loss_at(model, loss_fn, pass_rng, bounded)
 
     @jax.jit
     def evaluate(
@@ -652,6 +725,61 @@ def _make_evaluator(
     return evaluate
 
 
+def _loss_at(
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
+    bounded: tuple[float | None, float | None],
+) -> Callable[[Float[Array, " n"], dict, PRNGKeyArray], Float[Array, ""]]:
+    """The loss of a flat point, projected into ``bounded``."""
+    model_params, static = eqx.partition(model, eqx.is_inexact_array)
+    _, unravel = ravel_pytree(model_params)
+
+    def loss_at(
+        x: Float[Array, " n"], sample: dict, key: PRNGKeyArray
+    ) -> Float[Array, ""]:
+        model_ = eqx.combine(unravel(jnp.clip(x, *bounded)), static)
+        if pass_rng:
+            return loss_fn(model_, key=key, **sample)
+        return loss_fn(model_, **sample)
+
+    return loss_at
+
+
+def _make_hessian_evaluator(
+    *,
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
+    bounded: tuple[float | None, float | None],
+) -> HessianEvaluator:
+    """:func:`_make_evaluator` plus the exact Hessian (ADR 0007).
+
+    Given the key and batch state a point was evaluated with, it draws
+    that same sample again, so value, gradient and Hessian belong to one
+    function. The Hessian is ``jax.hessian`` of the loss, through the
+    projection into ``bounded`` as the gradient is; a loss computed
+    outside JAX must supply its own second derivatives for it to work.
+    """
+    loss_at = _loss_at(model, loss_fn, pass_rng, bounded)
+
+    @jax.jit
+    def evaluate_hessian(
+        x: Float[Array, " n"],
+        dataset: dict[str, jax.Array],
+        key: PRNGKeyArray,
+        batch_state: BatchState,
+    ):
+        batch_idxs, batch_state = batch_state.next(key)
+        sample = jax.tree.map(lambda a: a[batch_idxs], dataset)
+        new_key, eval_key = jr.split(key)
+        f, g = jax.value_and_grad(loss_at)(x, sample, eval_key)
+        h = jax.hessian(loss_at)(x, sample, eval_key)
+        return f, g, h, new_key, batch_state
+
+    return evaluate_hessian
+
+
 def _scipy_update(
     minimize: Minimizer,
     *,
@@ -664,8 +792,13 @@ def _scipy_update(
     opt_hash: int,
     bounded: tuple[float | None, float | None] | None,
     stop_fn: StopFunction | None,
+    with_hessian: bool = False,
 ) -> UpdateClass:
-    """Wrap a scipy ``minimize`` call into a :class:`ScipyUpdateClass`."""
+    """Wrap a scipy ``minimize`` call into a :class:`ScipyUpdateClass`.
+
+    With ``with_hessian`` the driver also serves exact Hessians
+    (``driver.hessian``, ADR 0007).
+    """
     if stop_fn is not None:
         raise ValueError(
             f"{name!r} cannot honour a stopping criterion: it runs its "
@@ -681,8 +814,21 @@ def _scipy_update(
         bounded=bounded,
         with_grad=with_grad,
     )
+    evaluate_hessian = (
+        _make_hessian_evaluator(
+            model=model, loss_fn=loss_fn, pass_rng=pass_rng, bounded=bounded
+        )
+        if with_hessian
+        else None
+    )
     return ScipyUpdateClass(
-        driver=functools.partial(_drive, minimize, evaluate, bounded),
+        driver=functools.partial(
+            _drive,
+            minimize,
+            evaluate,
+            bounded,
+            evaluate_hessian=evaluate_hessian,
+        ),
         hash=opt_hash,
         family=family,
     )
@@ -1040,11 +1186,13 @@ def trustconstr_update(
     initial_tr_radius: float = 1.0,
     initial_barrier_parameter: float = 0.1,
     initial_barrier_tolerance: float = 0.1,
+    hessian: str = "bfgs",
 ) -> UpdateClass:
     """Construct the ``UpdateClass`` behind ``optimizer="trustconstr"``.
 
     ``scipy.optimize.minimize(method="trust-constr")`` with scipy's
-    default dense BFGS Hessian approximation. Without a box it is
+    default dense BFGS Hessian approximation, or with ``hessian="exact"``
+    the loss's exact Hessian (ADR 0007). Without a box it is
     Byrd-Omojokun trust-region SQP, which on an unconstrained problem is
     a quasi-Newton trust region solved by projected conjugate gradients.
     With a box it is a trust-region interior-point (barrier) method, and
@@ -1064,6 +1212,11 @@ def trustconstr_update(
     initial_barrier_tolerance : float, optional
         Initial tolerance of the barrier subproblem; scipy's default
         ``0.1``. Used only with a box.
+    hessian : str, optional
+        ``"bfgs"`` (default), scipy's dense BFGS approximation, or
+        ``"exact"``: ``jax.hessian`` of the loss, taken on the sample
+        the point was evaluated with. Each Hessian trust-constr asks for
+        is one recorded, billed evaluation.
 
     Returns
     -------
@@ -1073,8 +1226,15 @@ def trustconstr_update(
     Raises
     ------
     ValueError
-        If ``stop_fn`` is not ``None``.
+        If ``stop_fn`` is not ``None``, or ``hessian`` is neither
+        ``"bfgs"`` nor ``"exact"``.
     """
+    if hessian not in ("bfgs", "exact"):
+        raise ValueError(
+            f"Unknown trustconstr hessian {hessian!r}; expected 'bfgs' or "
+            "'exact'."
+        )
+    exact = hessian == "exact"
 
     def minimize(driver, x0, bounds):
         if bounds is not None:
@@ -1088,7 +1248,7 @@ def trustconstr_update(
             driver.value_and_grad,
             x0,
             jac=True,
-            hess=so.BFGS(),
+            hess=driver.hessian if exact else so.BFGS(),
             method="trust-constr",
             bounds=bounds,
             callback=callback,
@@ -1113,6 +1273,7 @@ def trustconstr_update(
         opt_hash=opt_hash,
         bounded=bounded,
         stop_fn=stop_fn,
+        with_hessian=exact,
     )
 
 
