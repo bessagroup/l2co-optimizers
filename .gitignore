@@ -217,3 +217,5 @@ agent-reports/
 .claude/worktrees/
 
 .vscode/
+# Working notes on upstream friction (not deliverables)
+FEEDBACK_*.md

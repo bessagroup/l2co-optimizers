@@ -39,16 +39,21 @@ from l2co_optimizers import (
 )
 from l2co_optimizers._src.core.state_transfer import transfer_spec_for
 from l2co_optimizers._src.evosax_implementations import normalized_evosax
+from l2co_optimizers._src.ipopt import IPOPT_OPTIMIZERS
 from l2co_optimizers._src.lbfgs import stock_lbfgs
 from l2co_optimizers._src.mapping import optimizers as OPTIMIZER_REGISTRY
 from l2co_optimizers._src.optax_implementations import (
     normalized_optax_from_state,
     normalized_optax_normal,
 )
+from l2co_optimizers._src.optimistix_implementations import (
+    OPTIMISTIX_OPTIMIZERS,
+)
 from l2co_optimizers._src.optimizer_parts import (
     l2co_native_evosax,
     l2co_native_optax,
 )
+from l2co_optimizers._src.scipy_implementations import SCIPY_OPTIMIZERS
 
 from .toy_problems import sphere_problem
 
@@ -70,7 +75,19 @@ META_OPTIMIZERS = frozenset({"l2co", "rl2co"})
 # pass this check only because evosax's ``RandomSearch`` sat under the
 # same name in ``normalized_evosax`` -- and unpacking it raised (no
 # ``sampling_fn``).
-NON_PARTS_OPTIMIZERS = META_OPTIMIZERS | {"randomsearch"}
+#
+# The optimistix minimisers evaluate the objective themselves, which is
+# neither an optax transform nor an ask/tell population, so they are
+# plain-run entries only (ADR 0001). The scipy minimisers run their whole
+# budget inside one host callback, so they have no step to unpack at all
+# (ADR 0002); so does IPOPT (ADR 0003).
+NON_PARTS_OPTIMIZERS = (
+    META_OPTIMIZERS
+    | {"randomsearch"}
+    | OPTIMISTIX_OPTIMIZERS
+    | SCIPY_OPTIMIZERS
+    | IPOPT_OPTIMIZERS
+)
 
 
 def _parts_registries() -> set[str]:

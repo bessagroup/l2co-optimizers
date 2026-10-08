@@ -1,0 +1,123 @@
+name: Pull request
+on:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+      # Lint needs only ruff -- not the project or its sibling deps -- so we
+      # install ruff directly instead of '.[dev]'. Pinned to the
+      # ruff-pre-commit rev in .pre-commit-config.yaml, so this job and
+      # check_pre-commit can't disagree; bump the two together.
+      - name: Install ruff
+        run: uv pip install --system ruff==0.13.0
+      - name: Ruff check
+        run: ruff check
+      - name: Ruff format check
+        run: ruff format --check
+
+  run-tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        version: ["3.12", "3.13"]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout l2co-optimizers
+        uses: actions/checkout@v4
+        with:
+          path: l2co-optimizers
+      # f3dasm is an editable sibling dep ([tool.uv.sources] path
+      # "../f3dasm"). It comes from 'main' for a PR into main and from
+      # 'develop' otherwise -- including a PR into a feature branch, which
+      # f3dasm doesn't have.
+      - name: Checkout f3dasm (sibling editable dep)
+        uses: actions/checkout@v4
+        with:
+          repository: bessagroup/f3dasm
+          path: f3dasm
+          ref: ${{ github.base_ref == 'main' && 'main' || 'develop' }}
+      - name: Set up Python ${{ matrix.version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.version }}
+      - uses: astral-sh/setup-uv@v5
+      - name: Install dependencies
+        # NOTE: deliberately NOT passing --no-sources; uv must resolve the
+        # editable sibling dep declared under [tool.uv.sources].
+        working-directory: l2co-optimizers
+        run: uv sync --extra tests
+      - name: Run tests (excluding slow)
+        working-directory: l2co-optimizers
+        run: uv run pytest -m "not slow" --cov=l2co_optimizers --cov-report=xml
+      - name: Upload coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: l2co-optimizers/coverage.xml
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+      - name: Build sdist + wheel
+        run: uv build
+      - name: Check distribution metadata
+        run: |
+          uv pip install --system twine
+          twine check dist/*
+
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout l2co-optimizers
+        uses: actions/checkout@v4
+        with:
+          path: l2co-optimizers
+      # Same rule as run-tests: f3dasm from 'main' for a PR into main,
+      # 'develop' otherwise.
+      - name: Checkout f3dasm
+        uses: actions/checkout@v4
+        with:
+          repository: bessagroup/f3dasm
+          path: f3dasm
+          ref: ${{ github.base_ref == 'main' && 'main' || 'develop' }}
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+      - name: Install docs extras
+        working-directory: l2co-optimizers
+        run: uv sync --extra docs
+      - name: Build documentation
+        working-directory: l2co-optimizers
+        run: uv run mkdocs build
+
+  check_pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+      # pre-commit hooks (ruff-pre-commit, local toml-sort) run in their own
+      # isolated envs, so only pre-commit itself is needed -- not the project
+      # or its sibling deps.
+      - name: Install pre-commit
+        run: uv pip install --system pre-commit
+      - name: Run pre-commit checks
+        run: pre-commit run --all-files

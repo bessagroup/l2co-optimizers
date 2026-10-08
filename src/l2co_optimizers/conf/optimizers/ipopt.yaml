@@ -1,0 +1,4 @@
+# IPOPT at its defaults, through casadi (ADR 0003). Plain-run entry only:
+# it cannot appear in a switching menu.
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: ipopt

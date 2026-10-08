@@ -325,6 +325,12 @@
    5651126
   ]
  ],
+ "ipopt": [
+  [
+   "ipopt",
+   10812417
+  ]
+ ],
  "lr_sweep_pde": [
   [
    "adam_learning_rate=0.1",
@@ -365,6 +371,24 @@
    16634079
   ]
  ],
+ "optimistix": [
+  [
+   "bfgs",
+   9642196
+  ],
+  [
+   "dfp",
+   6857116
+  ],
+  [
+   "nonlinearcg",
+   15398246
+  ],
+  [
+   "neldermead",
+   15375163
+  ]
+ ],
  "pde": [
   [
    "adam_learning_rate=0.001",
@@ -377,6 +401,32 @@
   [
    "lbfgs",
    12649517
+  ]
+ ],
+ "scipy": [
+  [
+   "cobyqa",
+   12986095
+  ],
+  [
+   "powell",
+   14244031
+  ],
+  [
+   "tnc",
+   9925730
+  ],
+  [
+   "trustkrylov",
+   793108
+  ],
+  [
+   "slsqp",
+   5153975
+  ],
+  [
+   "trustconstr",
+   8722483
   ]
  ],
  "sepcmaes": [

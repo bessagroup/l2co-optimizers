@@ -13,6 +13,7 @@ classifiers = [
   "Programming Language :: Python :: 3"
 ]
 dependencies = [
+  "casadi>=3.7,<4",
   "equinox>=0.13.0,<0.14",
   "evosax>=0.2.0,<0.3",
   "f3dasm",
@@ -22,7 +23,9 @@ dependencies = [
   "jax-tqdm>=0.4.0",
   "jaxtyping>=0.3.2",
   "omegaconf",
-  "optax>=0.2.5"
+  "optax>=0.2.5",
+  "optimistix>=0.1.0,<0.2",
+  "scipy>=1.18,<2"
 ]
 description = "Bare optimizers compatible with the L2CO library"
 keywords = ["optimization", "optimizers", "jax", "evolution-strategies"]
@@ -33,7 +36,7 @@ maintainers = [
 name = "l2co-optimizers"
 readme = "README.md"
 requires-python = ">= 3.12"
-version = "0.2.0"
+version = "0.3.0"
 
 [project.optional-dependencies]
 dev = [

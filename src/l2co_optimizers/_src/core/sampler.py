@@ -69,7 +69,7 @@ def random_sampling(
     upper_bound: float = 1.0,
 ) -> InputParameters:
     """
-    Perform random sampling within the specified bounds.
+    Sample uniformly from ``[lower_bound, upper_bound)``.
 
     Parameters
     ----------
@@ -80,17 +80,21 @@ def random_sampling(
     n_samples : int
         Number of samples to generate.
     lower_bound : float, optional
-        Lower bound for sampling, by default 0.0.
+        Lower end of the range (inclusive), by default 0.0.
     upper_bound : float, optional
-        Upper bound for sampling, by default 1.0.
+        Upper end of the range (exclusive), by default 1.0.
 
     Returns
     -------
     InputParameters
         Randomly sampled parameters.
     """
+    # The initializer draws from [0, scale), so the scale is the width of
+    # the range. It used to be ``upper_bound``, which drew from
+    # [lower_bound, lower_bound + upper_bound): the two agree only when
+    # ``lower_bound`` is 0, so the default draws are unchanged.
     random_samples = _sample(
-        init_fn=initializers.uniform(scale=upper_bound),
+        init_fn=initializers.uniform(scale=upper_bound - lower_bound),
         n_samples=n_samples,
         key=key,
         params=params,
