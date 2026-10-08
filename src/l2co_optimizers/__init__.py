@@ -63,6 +63,7 @@ from l2co_optimizers._src.core.sampler import (
     grid_sampling,
     normal_sampling,
     random_sampling,
+    relative_normal_sampling,
     xavier_sampling,
 )
 from l2co_optimizers._src.core.state_transfer import (
@@ -178,6 +179,7 @@ __all__ = [
     "optimizer_parts",
     "optimizers",
     "random_sampling",
+    "relative_normal_sampling",
     "rbf_trust_region_mapping",
     "register_optimizer",
     "register_schedule_namer",

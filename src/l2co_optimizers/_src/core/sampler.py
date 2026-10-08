@@ -151,6 +151,68 @@ def normal_sampling(
     return jax.tree.map(lambda x, y: x + y, normal_samples, constant_samples)
 
 
+def relative_normal_sampling(
+    key: PRNGKeyArray,
+    params: PyTree,
+    n_samples: int,
+    std: float = 1.0,
+) -> InputParameters:
+    """
+    Sample around ``params``, spread relative to each value's size.
+
+    The one sampler that reads the *values* of ``params`` rather than only
+    their shape (ADR 0004). A task that prescribes a starting point keeps
+    it as its model -- a CUTEst task's model is the problem's ``x0`` --
+    and this sampler is how its runs start there:
+
+    * **member 0 is exactly** ``params``, so every optimizer with a
+      population of one, and every distribution strategy's mean, starts
+      at the prescribed point;
+    * **member** ``k >= 1`` **is** ``x + std * max(|x|, 1) * N(0, 1)``,
+      drawn independently per coordinate. The spread follows each
+      coordinate's size, since CUTEst variables differ in scale by orders
+      of magnitude, and falls back to ``std`` where ``|x| < 1``, so a zero
+      component still spreads. DE and SHADE move along differences
+      between members, so they need that spread.
+
+    Called after a switch with the incumbent (l2co's handshake), it puts
+    the incumbent in twice and draws the rest around it rather than
+    around the origin; ADR 0004 accepts both.
+
+    Parameters
+    ----------
+    key : jax.random.PRNGKey
+        Random key for reproducibility.
+    params : PyTree
+        Parameters to sample around; their values are member 0.
+    n_samples : int
+        Number of samples to generate.
+    std : float, optional
+        Spread relative to ``max(|x|, 1)``, by default 1.0. With ``1.0``
+        and coordinates no larger than 1 in magnitude, the spread matches
+        :func:`normal_sampling`'s default.
+
+    Returns
+    -------
+    InputParameters
+        Samples with a leading ``n_samples`` axis; sample 0 equals
+        ``params``.
+    """
+    noise = _sample(
+        init_fn=initializers.normal(stddev=1.0),
+        n_samples=n_samples,
+        key=key,
+        params=params,
+    )
+
+    def around(x: jax.Array, z: jax.Array) -> jax.Array:
+        x = jnp.asarray(x)
+        samples = x + std * jnp.maximum(jnp.abs(x), 1.0) * z
+        return samples.at[0].set(x)
+
+    return jax.tree.map(around, params, noise)
+
+
 def xavier_sampling(
     key: PRNGKeyArray,
     params: PyTree,
@@ -262,6 +324,7 @@ def grid_sampling(
 SAMPLER_MAPPING: dict[str, Callable[..., InputParameters]] = {
     "random": random_sampling,
     "normal": normal_sampling,
+    "relative_normal": relative_normal_sampling,
     "xavier": xavier_sampling,
     "constant": constant_sampling,
     "grid": grid_sampling,
@@ -274,8 +337,8 @@ def get_sampler(name: str) -> Callable[..., InputParameters]:
     Parameters
     ----------
     name : str
-        Name of the sampler to retrieve. Must be one of "random", "normal",
-        "xavier", "constant", or "grid".
+        Name of the sampler to retrieve. Must be one of "random",
+        "normal", "relative_normal", "xavier", "constant", or "grid".
 
     Returns
     -------
