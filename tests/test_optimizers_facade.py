@@ -61,6 +61,7 @@ def test_all_symbols_are_importable():
         ("vmapped_loss_and_grad_with_rng", "l2co_optimizers._src.core.loss"),
         # What a switching loop drives (l2co ADR 0019)
         ("optimizer_parts", "l2co_optimizers._src.optimizer_parts"),
+        ("PLAIN_RUN_OPTIMIZERS", "l2co_optimizers._src.optimizer_parts"),
         ("GradientParts", "l2co_optimizers._src.optimizer_parts"),
         ("PopulationParts", "l2co_optimizers._src.optimizer_parts"),
         ("step_fevals", "l2co_optimizers._src.optax_implementations"),

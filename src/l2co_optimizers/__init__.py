@@ -111,6 +111,7 @@ from l2co_optimizers._src.optax_implementations import (
     step_fevals,
 )
 from l2co_optimizers._src.optimizer_parts import (
+    PLAIN_RUN_OPTIMIZERS,
     GradientParts,
     PopulationParts,
     optimizer_parts,
@@ -149,6 +150,7 @@ __all__ = [
     "OptState",
     "OptimizationStep",
     "PopSize",
+    "PLAIN_RUN_OPTIMIZERS",
     "PopulationParts",
     "RecentHistory",
     "RunResult",
