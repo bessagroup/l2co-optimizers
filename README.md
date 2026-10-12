@@ -11,7 +11,7 @@ Bare optimizers compatible with the L2CO library
 ## Summary
 
 `l2co-optimizers` is the optimizer half of the [L2CO](https://github.com/bessagroup/l2co) ecosystem, as [`l2co-tasks`](https://github.com/bessagroup/l2co-tasks) is the task half. It provides:
-- **a name registry** of ready-to-run optimizers: the optax gradient methods, the evosax distribution- and population-based algorithms, the optimistix and scipy minimisers, IPOPT, plus SHADE, TuRBO, an RBF trust region, per-evaluation-key L-BFGS and random search;
+- **a name registry** of ready-to-run optimizers: the optax gradient methods, the evosax distribution- and population-based algorithms, the optimistix and scipy minimisers, IPOPT, modOpt's OpenSQP, plus SHADE, TuRBO, an RBF trust region, per-evaluation-key L-BFGS and random search;
 - **the `UpdateClass` container** every registry factory returns;
 - **the `OptimizationStep` spec** that names an optimizer with its hyperparameters and stopping criteria;
 - **ready-made Hydra optimizer configs**.
@@ -23,7 +23,7 @@ It also ships what each optimizer exposes to a loop that switches between optimi
 Learning-to-optimize and optimizer-selection research needs many optimizers behind one calling convention, so that a selector can switch between them mid-run. `l2co-optimizers` provides that convention without the meta-learning stack:
 - every optimizer is built by `optimizer_mapping(name)(model=..., loss_fn=..., pass_rng=..., opt_hash=..., bounded=..., stop_fn=...)`;
 - every one runs a budget through the same `UpdateClass.run` and reports into the same `HistoryState`;
-- every one except the scipy minimisers and IPOPT also steps through the same `(params, opt_state, key)` carry, reporting each step as an `OptHistory`. Those seven own their loop and run the whole budget in one call (ADRs 0002 and 0003).
+- every one except the scipy minimisers, IPOPT and OpenSQP also steps through the same `(params, opt_state, key)` carry, reporting each step as an `OptHistory`. Those own their loop and run the whole budget in one call (ADRs 0002, 0003 and 0010).
 
 It depends on neither `l2co` nor `l2co-tasks`, and has no notion of a task: factories take `model`, `loss_fn` and `pass_rng` as keywords. `l2co` is the bridge that unpacks an `l2co_tasks.Task` into them (l2co ADR 0018).
 
@@ -172,6 +172,7 @@ These build an estimate of the Hessian from successive gradients.
 | `ipopt` | IPOPT: primal-dual interior point with a filter line search and a limited-memory quasi-Newton Hessian, or the exact Hessian with `hessian="exact"` | IPOPT, through casadi | [Wächter & Biegler (2006)](https://doi.org/10.1007/s10107-004-0559-y) |
 | `lbfgs` | L-BFGS, with a fresh PRNG key per linesearch evaluation on stochastic objectives | optax + built-in | [Liu & Nocedal (1989)](https://doi.org/10.1007/BF01589116) |
 | `lbfgsb` | L-BFGS-B: limited-memory BFGS with a Moré–Thuente line search and bounds handled inside the method (gradient projection) | scipy | [Byrd et al. (1995)](https://doi.org/10.1137/0916069) |
+| `opensqp` | OpenSQP: SQP with a damped BFGS Hessian and a line search on an augmented-Lagrangian merit function; needs modOpt (`uv sync --group opensqp`) | modOpt | [Joshy & Hwang (2026)](https://doi.org/10.1016/j.advengsoft.2025.104084) |
 | `slsqp` | Sequential least-squares quadratic programming (SLSQP): SQP with a dense BFGS Hessian and an L1 merit line search | scipy | Kraft (1988), DFVLR-FB 88-28 |
 | `trustconstr` | trust-constr: trust-region SQP (an interior-point method when there is a box) with a dense BFGS Hessian, or the exact Hessian with `hessian="exact"` | scipy | [Lalee et al. (1998)](https://doi.org/10.1137/S1052623493262993); [Byrd et al. (1999)](https://doi.org/10.1137/S1052623497325107) |
 
@@ -244,6 +245,8 @@ The seven scipy entries (`cobyqa`, `powell`, `tnc`, `trustkrylov`, `slsqp`, `tru
 
 `ipopt` runs the same way, on the same driver, through casadi, whose wheels bundle IPOPT. IPOPT uses its own limited-memory quasi-Newton Hessian, and a value request and a gradient request at the same point are one evaluation. See [ADR 0003](docs/adr/0003-nlp-solvers-as-host-callback-entries.md). With `hessian="exact"`, `ipopt` and `trustconstr` use `jax.hessian` of the loss instead, taken on the sample its point was evaluated with; each Hessian is one billed evaluation. A loss computed outside JAX must supply its own Hessian (l2co-tasks ADR 0005). See [ADR 0007](docs/adr/0007-exact-hessians-for-ipopt-and-trustconstr.md).
 
+`opensqp` runs the same way, on the same driver: modOpt's OpenSQP, an SQP solver with a damped BFGS Hessian and a line search on an augmented-Lagrangian merit function. Each new point is one evaluation, value and gradient together. Its stopping tolerances are zero, and a run that stops evaluating is ended by the same stall guard as trust-constr's. modOpt is not a dependency of this package: it is on GitHub only, and the `modopt` on PyPI is an unrelated library. Install it with `uv sync --group opensqp`, which pins it to one commit, or with `pip install 'modopt @ git+https://github.com/LSDOlab/modopt.git' qpsolvers quadprog highspy`. Without it, building the entry raises an `ImportError`. See [ADR 0010](docs/adr/0010-modopt-opensqp-from-a-pinned-git-dependency-group.md).
+
 Three of these get expensive in high dimensions. COBYQA's cost per evaluation grows steeply with the dimensionality, and SLSQP's and trust-constr's do from about a thousand dimensions, so high-dimensional runs of these three can exceed a cluster's wall-clock limit.
 
 ## Hydra optimizer configurations
@@ -253,6 +256,7 @@ The package ships ready-made `optimizers` config groups under `l2co_optimizers/c
 - **the optimistix minimisers at their defaults (plain runs only):** `optimistix`;
 - **the scipy minimisers at their defaults (plain runs only):** `scipy`;
 - **IPOPT at its defaults (plain runs only):** `ipopt`;
+- **modOpt's OpenSQP at its defaults (plain runs only; needs modOpt):** `opensqp`;
 - **the solvers of modOpt's CUTEst benchmark, without SNOPT (plain runs only):** `modopt`;
 - **the portfolios used across the L2CO studies:** `small`, `medium`, `standard`, `standard_no_stopping`, `all`;
 - **curated menus:** `headroom4`, `contrast`, `two_functions`, `gaussian_classification`, `pde`, `supercompressible`.

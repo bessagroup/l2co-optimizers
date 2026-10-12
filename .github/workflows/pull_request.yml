@@ -51,11 +51,15 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - name: Install dependencies
         # NOTE: deliberately NOT passing --no-sources; uv must resolve the
-        # editable sibling dep declared under [tool.uv.sources].
+        # editable sibling dep declared under [tool.uv.sources], and the
+        # opensqp group's modOpt, which comes from GitHub (ADR 0010).
         working-directory: l2co-optimizers
-        run: uv sync --extra tests
+        run: uv sync --extra tests --group opensqp
       - name: Run tests (excluding slow)
         working-directory: l2co-optimizers
+        # A missing modOpt fails tests/test_opensqp.py instead of skipping it.
+        env:
+          L2CO_OPTIMIZERS_REQUIRE_MODOPT: "1"
         run: uv run pytest -m "not slow" --cov=l2co_optimizers --cov-report=xml
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest' && matrix.version == '3.12'

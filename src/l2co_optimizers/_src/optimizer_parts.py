@@ -57,6 +57,7 @@ from l2co_optimizers._src.lbfgs import (
     stock_lbfgs,
 )
 from l2co_optimizers._src.mapping import optimizer_mapping
+from l2co_optimizers._src.opensqp import OPENSQP_OPTIMIZERS
 from l2co_optimizers._src.optax_implementations import (
     normalized_optax_from_state,
     normalized_optax_normal,
@@ -90,12 +91,15 @@ __all__ = [
 
 #: Registry names that run only as plain registry entries (normalized). Their
 #: solver evaluates the objective itself -- an optimistix minimiser (ADR
-#: 0001), a scipy minimiser (ADR 0002), IPOPT (ADR 0003) -- so
-#: :func:`optimizer_parts` refuses them, and they can never be a sub-optimizer
-#: in a switching menu or an rl2co action. A caller assembling a menu from a
-#: configured suite leaves these out.
+#: 0001), a scipy minimiser (ADR 0002), IPOPT (ADR 0003), OpenSQP (ADR
+#: 0010) -- so :func:`optimizer_parts` refuses them, and they can never be
+#: a sub-optimizer in a switching menu or an rl2co action. A caller
+#: assembling a menu from a configured suite leaves these out.
 PLAIN_RUN_OPTIMIZERS: frozenset[str] = (
-    OPTIMISTIX_OPTIMIZERS | SCIPY_OPTIMIZERS | IPOPT_OPTIMIZERS
+    OPTIMISTIX_OPTIMIZERS
+    | SCIPY_OPTIMIZERS
+    | IPOPT_OPTIMIZERS
+    | OPENSQP_OPTIMIZERS
 )
 
 
@@ -589,6 +593,16 @@ def optimizer_parts(
             f"runs the whole budget inside one host callback, so there is "
             f"no step to interleave with a switch. It runs only as a plain "
             f"registry entry, not inside a switching menu (ADR 0003)."
+        )
+
+    if name in OPENSQP_OPTIMIZERS:
+        raise ValueError(
+            f"Optimizer {opt_step.optimizer!r} is modOpt's OpenSQP, which "
+            f"cannot be unpacked into parts: OpenSQP owns the optimization "
+            f"loop and runs the whole budget inside one host callback, so "
+            f"there is no step to interleave with a switch. It runs only "
+            f"as a plain registry entry, not inside a switching menu (ADR "
+            f"0010)."
         )
 
     raise ValueError(
