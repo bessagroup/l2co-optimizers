@@ -202,12 +202,23 @@ guard ends the run:
 
 | d | 40 | 256 | 1024 | 3843 |
 |---|---|---|---|---|
-| No box, ms per evaluation | 3.7 | 3.9 | being measured | being measured |
-| Box, ms per evaluation until the stall | 1.8 | 40 | being measured | being measured |
-| Box, ms per idle iteration | 2.3 | 108 | being measured | being measured |
+| No box, ms per evaluation | 3.7 | 3.9 | 131 | 4,400 |
+| Box, ms per evaluation until the stall | 1.8 | 40 | 2,850 | 106,000 |
+| Box, ms per idle iteration | 2.3 | 108 | not reached | not reached |
 
-A databank run step allows about 14 ms per evaluation (ADR 0002). The
-1,000 idle iterations at d = 256 cost about 108 s per realization.
+The 3843-dimensional figures cover the first 411 evaluations without a
+box and the first 20 with one, within a 30-minute limit. At d = 1024
+with a box the run had not stalled after 632 evaluations and 30 minutes.
+
+A databank run step allows about 14 ms per evaluation (ADR 0002).
+Without a box, `opensqp` fits up to a few hundred dimensions and runs
+out of time from about d = 1024. With a box, the quadratic programs
+carry two bound rows per variable, and quadprog's failures send
+OpenSQP to HiGHS on most iterations: already at d = 256 it costs 40 ms
+an evaluation, and the 1,000 idle iterations about 108 s per
+realization. There is no dimension cap, as for COBYQA, SLSQP and
+trust-constr (ADRs 0002, 0003): a cell above those sizes will hit the
+wall-clock limit.
 
 ## Side effects of importing modOpt
 

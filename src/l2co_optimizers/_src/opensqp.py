@@ -232,8 +232,10 @@ def opensqp_update(
     is a quasi-Newton step from a dense quadratic program; with one, the
     bounds are inequality rows of that program. It takes inequality and
     equality constraints too; a run passes it only the box (l2co ADR
-    0020). It takes no hyperparameters. Its dense matrices make the cost
-    per step grow steeply above about a thousand dimensions.
+    0020). It takes no hyperparameters. Its dense quadratic programs
+    make the cost per evaluation grow steeply with the dimensionality,
+    from a few hundred dimensions with a box and about a thousand
+    without (ADR 0010).
 
     Parameters
     ----------
