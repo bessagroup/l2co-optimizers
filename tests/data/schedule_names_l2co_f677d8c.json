@@ -371,6 +371,36 @@
    16634079
   ]
  ],
+ "modopt": [
+  [
+   "ipopt",
+   10812417
+  ],
+  [
+   "ipopt_hessian=exact",
+   8942576
+  ],
+  [
+   "slsqp",
+   5153975
+  ],
+  [
+   "bfgs_linesearch=wolfe",
+   10214015
+  ],
+  [
+   "lbfgsb",
+   494538
+  ],
+  [
+   "trustconstr",
+   8722483
+  ],
+  [
+   "trustconstr_hessian=exact",
+   2493123
+  ]
+ ],
  "optimistix": [
   [
    "bfgs",

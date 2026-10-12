@@ -1,0 +1,43 @@
+# The solvers of modOpt's CUTEst benchmark (Joshy & Hwang,
+# arXiv:2410.12942, Sec. 5.4, Fig. 13), in its script's order. SNOPT is
+# left out: it needs a commercial licence. Each entry is commented with
+# modOpt's label for it.
+#
+# The solvers and Hessian modes are modOpt's; the stopping rules are
+# not. modOpt caps every solver at 500 iterations with its own default
+# tolerances. Here a run lasts the whole budget (ADR 0002). Plain-run
+# entries only: they cannot appear in a switching menu. The two
+# exact-Hessian entries need a loss that can be differentiated twice
+# (ADR 0007).
+#
+# modOpt's problems are unconstrained. On a task without a box every
+# entry here runs without bounds too, so lbfgsb is L-BFGS-B with none,
+# as modOpt ran it. A task with a box hands it to every entry.
+
+# IPOPT
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: ipopt
+# IPOPT-2
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: ipopt
+  hyperparameters:
+    hessian: exact
+# PySLSQP: the same Fortran SLSQP, through scipy (ADR 0003)
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: slsqp
+# BFGS: scipy's BFGS, made steppable (ADR 0005)
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: bfgs
+  hyperparameters:
+    linesearch: wolfe
+# LBFGSB
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: lbfgsb
+# TrustConstr
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: trustconstr
+# TrustConstr-2
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: trustconstr
+  hyperparameters:
+    hessian: exact
