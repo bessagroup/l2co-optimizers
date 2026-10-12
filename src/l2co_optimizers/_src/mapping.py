@@ -7,6 +7,12 @@
 from collections.abc import Callable
 
 # Local
+from l2co_optimizers._src.core.constraint_handling import (
+    CONSTRAINT_HANDLING_LEVELS,
+    CONSTRAINTS_BOX,
+    CONSTRAINTS_GENERAL,
+    CONSTRAINTS_NONE,
+)
 from l2co_optimizers._src.core.update_class import UpdateClass
 from l2co_optimizers._src.core.utils import normalize_key
 from l2co_optimizers._src.evosax_implementations import evosax_mapping
@@ -66,8 +72,36 @@ optimizers: dict[str, Callable[..., UpdateClass]] = {
     ).items()
 }
 
+#: The constraint-handling level of every built-in that is above
+#: :data:`CONSTRAINTS_NONE` (ADR 0008); every other built-in clips. Keys
+#: are normalized. :func:`register_optimizer` writes here too, so a
+#: registered entry carries the level it declared.
+_constraint_handling: dict[str, str] = {
+    # The solver takes inequality, equality and bound constraints.
+    "cobyla": CONSTRAINTS_GENERAL,
+    "cobyqa": CONSTRAINTS_GENERAL,
+    "ipopt": CONSTRAINTS_GENERAL,
+    "slsqp": CONSTRAINTS_GENERAL,
+    "trustconstr": CONSTRAINTS_GENERAL,
+    # The solver takes the bounds itself.
+    "lbfgsb": CONSTRAINTS_BOX,
+    "powell": CONSTRAINTS_BOX,
+    "tnc": CONSTRAINTS_BOX,
+    # Candidates are repaired or clipped before the state learns from them.
+    "rbftrustregion": CONSTRAINTS_BOX,
+    "shade": CONSTRAINTS_BOX,
+    "turbo": CONSTRAINTS_BOX,
+    # No state: each draw is clipped and evaluated, nothing is carried over.
+    "randomsearch": CONSTRAINTS_BOX,
+}
 
-def register_optimizer(name: str, factory: Callable[..., UpdateClass]) -> None:
+
+def register_optimizer(
+    name: str,
+    factory: Callable[..., UpdateClass],
+    *,
+    constraint_handling: str = CONSTRAINTS_NONE,
+) -> None:
     """Register an external optimizer factory under ``name``.
 
     This is the extension point that lets sibling packages (e.g. ``rl2co``)
@@ -90,8 +124,26 @@ def register_optimizer(name: str, factory: Callable[..., UpdateClass]) -> None:
         ``pass_rng``, ``opt_hash``, ``bounded``, ``stop_fn`` and
         ``**hyperparameters``. Meta-optimizers, which need a full task,
         register with ``l2co.register_optimizer`` instead.
+    constraint_handling : str, optional
+        How far the optimizer can enforce constraints: one of
+        :data:`CONSTRAINT_HANDLING_LEVELS` (ADR 0008). Defaults to
+        :data:`CONSTRAINTS_NONE`, which is right for a factory that
+        only clips to ``bounded``. Re-registering a name replaces its
+        level along with its factory.
+
+    Raises
+    ------
+    ValueError
+        If ``constraint_handling`` is not one of the levels.
     """
-    optimizers[normalize_key(name)] = factory
+    if constraint_handling not in CONSTRAINT_HANDLING_LEVELS:
+        raise ValueError(
+            f"constraint_handling must be one of "
+            f"{CONSTRAINT_HANDLING_LEVELS}, got {constraint_handling!r}"
+        )
+    key = normalize_key(name)
+    optimizers[key] = factory
+    _constraint_handling[key] = constraint_handling
 
 
 def optimizer_mapping(name: str) -> Callable[..., UpdateClass]:
@@ -120,3 +172,42 @@ def optimizer_mapping(name: str) -> Callable[..., UpdateClass]:
         return optimizers[normalize_key(name)]
     except KeyError:
         raise ValueError(f"Optimizer '{name}' not recognized.") from None
+
+
+def constraint_handling(name: str) -> str:
+    """
+    How far the optimizer registered under ``name`` can enforce
+    constraints (ADR 0008).
+
+    Parameters
+    ----------
+    name : str
+        Name of the optimizer, in any spelling that normalizes to a
+        registered key.
+
+    Returns
+    -------
+    str
+        One of :data:`CONSTRAINT_HANDLING_LEVELS`:
+
+        - :data:`CONSTRAINTS_NONE`: the optimizer only has its
+          candidates clipped to ``bounded``, and its own state never
+          learns that they were moved;
+        - :data:`CONSTRAINTS_BOX`: it keeps its own state inside the
+          box;
+        - :data:`CONSTRAINTS_GENERAL`: its solver also takes inequality
+          and equality constraints, though nothing passes it any yet
+          (l2co ADR 0020).
+
+        A name added to :data:`optimizers` without going through
+        :func:`register_optimizer` is :data:`CONSTRAINTS_NONE`.
+
+    Raises
+    ------
+    ValueError
+        If optimizer name is not recognized.
+    """
+    key = normalize_key(name)
+    if key not in optimizers:
+        raise ValueError(f"Optimizer '{name}' not recognized.")
+    return _constraint_handling.get(key, CONSTRAINTS_NONE)

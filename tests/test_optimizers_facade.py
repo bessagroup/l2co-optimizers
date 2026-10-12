@@ -45,6 +45,18 @@ def test_all_symbols_are_importable():
         ("optimizer_mapping", "l2co_optimizers._src.mapping"),
         ("optimizers", "l2co_optimizers._src.mapping"),
         ("normalize_key", "l2co_optimizers._src.core.utils"),
+        # Constraint handling per registry entry (ADR 0008)
+        ("constraint_handling", "l2co_optimizers._src.mapping"),
+        (
+            "CONSTRAINT_HANDLING_LEVELS",
+            "l2co_optimizers._src.core.constraint_handling",
+        ),
+        ("CONSTRAINTS_NONE", "l2co_optimizers._src.core.constraint_handling"),
+        ("CONSTRAINTS_BOX", "l2co_optimizers._src.core.constraint_handling"),
+        (
+            "CONSTRAINTS_GENERAL",
+            "l2co_optimizers._src.core.constraint_handling",
+        ),
         # Contract types
         ("InitFunction", "l2co_optimizers._src.core.typing"),
         ("StepFunction", "l2co_optimizers._src.core.typing"),
