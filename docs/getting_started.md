@@ -69,6 +69,7 @@ The package ships ready-made `optimizers` config groups under `l2co_optimizers/c
 - **the optimistix minimisers at their defaults (plain runs only):** `optimistix`;
 - **the scipy minimisers at their defaults (plain runs only):** `scipy`;
 - **IPOPT at its defaults (plain runs only):** `ipopt`;
+- **modOpt's OpenSQP at its defaults (plain runs only; needs modOpt):** `opensqp`;
 - **the solvers of modOpt's CUTEst benchmark, without SNOPT (plain runs only):** `modopt`;
 - **the portfolios used across the L2CO studies:** `small`, `medium`, `standard`, `standard_no_stopping`, `all`;
 - **curated menus:** `headroom4`, `contrast`, `two_functions`, `gaussian_classification`, `pde`, `supercompressible`.

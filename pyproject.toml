@@ -2,6 +2,14 @@
 build-backend = "setuptools.build_meta"
 requires = ["setuptools>=77.0.0", "wheel"]
 
+[dependency-groups]
+opensqp = [
+  "modopt",
+  "highspy>=1.7",
+  "qpsolvers>=4.3",
+  "quadprog>=0.1.13"
+]
+
 [project]
 authors = [
   {email = "m.p.vanderschelling@tudelft.nl", name = "Martin van der Schelling"}
@@ -127,3 +135,4 @@ package = true
 
 [tool.uv.sources]
 f3dasm = {editable = true, path = "../f3dasm"}
+modopt = {git = "https://github.com/LSDOlab/modopt.git", rev = "b9c9952b523695778dd3c81bd3d41bebd220af84"}

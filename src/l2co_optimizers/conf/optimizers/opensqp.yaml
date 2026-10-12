@@ -1,0 +1,7 @@
+# modOpt's OpenSQP at its defaults (ADR 0010). A plain-run entry only: it
+# cannot appear in a switching menu. It needs LSDOlab's modOpt, which is
+# not a dependency of this package: install it with the opensqp
+# dependency group (uv sync --group opensqp). Its dense matrices make the
+# cost per step grow steeply above about a thousand dimensions.
+- _target_: l2co_optimizers.OptimizationStep
+  optimizer: opensqp
