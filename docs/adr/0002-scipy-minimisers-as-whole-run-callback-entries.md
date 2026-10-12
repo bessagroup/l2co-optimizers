@@ -185,7 +185,7 @@ uses.
 | Newton-CG | Truncated Newton, like TNC |
 | trust-ncg | A Krylov trust region, like trust-krylov |
 | trust-exact, dogleg | Need the full n×n Hessian |
-| COBYLA | COBYQA's idea with a linear model |
+| COBYLA | COBYQA's idea with a linear model (added after all, as a derivative-free method that takes constraints: ADR 0009) |
 | trust-constr | Duplicates trust-ncg without a box; slow Python (added after all, with a BFGS Hessian, as a named baseline: ADR 0003) |
 | DIRECT, dual_annealing, shgo | Need a finite box, and no task set has one |
 | basinhopping | A meta-optimizer around a duplicate local solver |

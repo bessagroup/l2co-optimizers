@@ -1,11 +1,11 @@
 """
 scipy.optimize minimisers as plain-run ``UpdateClass`` entries (ADR 0002).
 
-Seven registry entries -- ``"cobyqa"``, ``"powell"``, ``"tnc"``,
-``"trustkrylov"``, ``"slsqp"``, ``"trustconstr"`` and ``"lbfgsb"`` -- each run
-:func:`scipy.optimize.minimize` with the matching method. scipy owns
-the optimization loop, calling the objective itself, so none of them
-can be stepped from a JAX scan:
+Eight registry entries -- ``"cobyqa"``, ``"cobyla"``, ``"powell"``,
+``"tnc"``, ``"trustkrylov"``, ``"slsqp"``, ``"trustconstr"`` and
+``"lbfgsb"`` -- each run :func:`scipy.optimize.minimize` with the matching
+method. scipy owns the optimization loop, calling the objective itself,
+so none of them can be stepped from a JAX scan:
 :class:`ScipyUpdateClass` overrides :meth:`~UpdateClass.run` to make
 the *whole run* one :func:`jax.pure_callback`. On the host, the
 callback drives scipy against a jitted evaluation of the loss and
@@ -14,8 +14,8 @@ returns fixed-length arrays the run loop turns into a
 
 The decisions behind the wrapping are recorded in
 ``docs/adr/0002-scipy-minimisers-as-whole-run-callback-entries.md``,
-those for SLSQP and trust-constr in ADR 0003, and those for L-BFGS-B in
-ADR 0006; in brief:
+those for SLSQP and trust-constr in ADR 0003, those for L-BFGS-B in
+ADR 0006, and those for COBYLA in ADR 0009; in brief:
 
 * **One iteration is one evaluation.** Every call scipy makes to the
   objective -- the value, or value and gradient together -- is one
@@ -36,12 +36,14 @@ ADR 0006; in brief:
 * **Stochastic or minibatched losses** get a fresh batch and key on
   every evaluation, drawn exactly as :meth:`UpdateClass.step` draws
   them for any other entry.
-* **Bounds** are passed to scipy for COBYQA, Powell, TNC, SLSQP,
+* **Bounds** are passed to scipy for COBYQA, COBYLA, Powell, TNC, SLSQP,
   trust-constr and L-BFGS-B, which support them, with the starting point
   clipped into the box (trust-constr's box is ``keep_feasible``).
   trust-krylov does not, so its loss is evaluated at the point projected
-  into the box, with the gradient taken through the projection. In all
-  seven, the history records the projected point.
+  into the box, with the gradient taken through the projection. COBYLA
+  takes the box as constraints it may violate on the way, so it too can
+  propose a point outside the box, evaluated at its projection. In all
+  eight, the history records the projected point.
 * **Exact Hessians** (ADR 0007). With ``hessian="exact"``,
   trust-constr gets ``jax.hessian`` of the loss from
   :meth:`_Driver.hessian`, taken on the sample its point was evaluated
@@ -53,7 +55,7 @@ ADR 0006; in brief:
   run ends at its current point, as if scipy had terminated.
 * **No stopping criterion and no switching.** A ``stop_fn`` raises,
   since nothing can check it inside one callback, and
-  ``optimizer_parts`` refuses all seven.
+  ``optimizer_parts`` refuses all eight.
 """
 
 #                                                                       Modules
@@ -106,6 +108,7 @@ logger = logging.getLogger(__name__)
 SCIPY_OPTIMIZERS: frozenset[str] = frozenset(
     {
         "cobyqa",
+        "cobyla",
         "powell",
         "tnc",
         "trustkrylov",
@@ -125,7 +128,8 @@ _UNREACHABLE = 2**31 - 1
 #: 0002, 0003), so scipy ends a run only when the method cannot progress.
 #: Chosen by running every method on sphere, a 1e6-conditioned
 #: ellipsoid, Rosenbrock and Rastrigin at d = 2, 10, 40: at these values
-#: COBYQA stops on its trust-region radius, Powell on "no improvement",
+#: COBYQA and COBYLA stop on their trust-region radius (COBYLA rejects a
+#: radius of zero and raises at 1e-300), Powell on "no improvement",
 #: and TNC on a failed line search, all cleanly. trust-krylov has no
 #: clean tolerance to find: whatever its ``gtol`` (1e-12, 1e-15 or 0),
 #: it stops when its model stops predicting improvement, or proposes a
@@ -137,6 +141,7 @@ _UNREACHABLE = 2**31 - 1
 #: evaluating anything. L-BFGS-B stops on a zero projected gradient, a
 #: zero relative reduction or a failed line search (ADR 0006).
 _COBYQA_FINAL_TR_RADIUS = 1e-15
+_COBYLA_TOL = 1e-15
 _POWELL_XTOL = 1e-15
 _POWELL_FTOL = 0.0
 _TNC_FTOL = 0.0
@@ -909,6 +914,78 @@ def cobyqa_update(
     )
 
 
+def cobyla_update(
+    *,
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
+    opt_hash: int,
+    bounded: tuple[float | None, float | None] | None = (None, None),
+    stop_fn: StopFunction | None = None,
+    rhobeg: float = 1.0,
+) -> UpdateClass:
+    """Construct the ``UpdateClass`` behind ``optimizer="cobyla"``.
+
+    ``scipy.optimize.minimize(method="COBYLA")``: Powell's derivative-free
+    trust-region method on linear interpolation models of the loss and of
+    every constraint, over a simplex of ``d + 1`` points. Since scipy 1.16
+    it runs PRIMA's pure-Python port. It takes inequality and equality
+    constraints; a run passes it only the box (l2co ADR 0020). Parameters
+    other than ``rhobeg`` are those of :func:`cobyqa_update`, except that
+    COBYLA takes the box as constraints it may violate on the way: a
+    proposed point outside the box is evaluated at its projection, and
+    the history records that projection.
+
+    Parameters
+    ----------
+    rhobeg : float, optional
+        Initial trust-region radius; scipy's default ``1.0``.
+
+    Returns
+    -------
+    UpdateClass
+        A :class:`ScipyUpdateClass`.
+
+    Raises
+    ------
+    ValueError
+        If ``stop_fn`` is not ``None``, or ``rhobeg`` is not finite or is
+        below COBYLA's final radius. PRIMA would replace such a value,
+        with only a warning, and the run would not be the one configured.
+    """
+    if not (np.isfinite(rhobeg) and rhobeg >= _COBYLA_TOL):
+        raise ValueError(
+            f"cobyla needs a finite rhobeg of at least {_COBYLA_TOL:g}, its "
+            f"final trust-region radius; got rhobeg={rhobeg}."
+        )
+
+    def minimize(driver, x0, bounds):
+        return so.minimize(
+            driver.value,
+            x0,
+            method="COBYLA",
+            bounds=bounds,
+            options=dict(
+                rhobeg=rhobeg,
+                tol=_COBYLA_TOL,
+                maxiter=_UNREACHABLE,
+            ),
+        ).x
+
+    return _scipy_update(
+        minimize,
+        name="cobyla",
+        family=FAMILY_DERIVATIVE_FREE,
+        with_grad=False,
+        model=model,
+        loss_fn=loss_fn,
+        pass_rng=pass_rng,
+        opt_hash=opt_hash,
+        bounded=bounded,
+        stop_fn=stop_fn,
+    )
+
+
 def powell_update(
     *,
     model: PyTree,
@@ -1360,6 +1437,7 @@ def lbfgsb_update(
 
 scipy_mapping = {
     "cobyqa": Partial(cobyqa_update),
+    "cobyla": Partial(cobyla_update),
     "powell": Partial(powell_update),
     "tnc": Partial(tnc_update),
     "trustkrylov": Partial(trustkrylov_update),
