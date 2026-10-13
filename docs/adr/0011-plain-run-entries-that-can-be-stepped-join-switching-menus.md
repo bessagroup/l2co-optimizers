@@ -63,7 +63,7 @@ only alongside a `value_fn`, and rl2co's `optax_wrapper` never did. So
 every consumer now forwards `value` and `grad` on every gradient step:
 
 - l2co's `strategy_wrapper` (l2co#86);
-- rl2co's `evosax_wrapper` and `optax_wrapper`.
+- rl2co's `evosax_wrapper` and `optax_wrapper` (rl2co#57).
 
 All 27 optax transforms in the registry accept and ignore both.
 `update` raises a `ValueError` naming the missing keyword when a
@@ -184,7 +184,7 @@ the per-entry constraint declarations of ADR 0008.
 ## Rollout
 
 1. l2co#86: the six handshake rows, and `strategy_wrapper` forwarding
-   `value`; the rl2co PR that makes its two wrappers forward it.
+   `value`; rl2co#57, which makes its two wrappers forward it.
 2. This ADR and `randomsearch`'s parts.
 3. The optimistix trio's parts.
 4. The `neldermead` rewrite.
