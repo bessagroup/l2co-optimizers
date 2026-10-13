@@ -222,16 +222,24 @@ wall-clock limit.
 
 ## Side effects of importing modOpt
 
-- **Warnings.** Importing modOpt prints invalid-escape, scipy-deprecation
-  and "matplotlib not found" warnings from modules OpenSQP does not use.
-  The factory silences them for the import only. During a run it
-  silences two that repeat on every idle step: qpsolvers converting the
-  relaxed sub-problem, and scipy's BFGS skipping a zero update.
-- **matplotlib.** modOpt calls `matplotlib.use("TkAgg")` at import. On a
-  machine without a display, a process that imports modOpt before
-  pyplot can no longer import pyplot. Here that cannot happen: f3dasm,
-  which `l2co_optimizers` imports, loads pyplot first, so modOpt's call
-  fails quietly and the backend stays as it was.
+- **Warnings.** Importing modOpt prints invalid-escape and
+  scipy-deprecation warnings from modules OpenSQP does not use. The
+  factory silences them for the import only. During a run it silences
+  two that repeat on every idle step: qpsolvers converting the relaxed
+  sub-problem, and scipy's BFGS skipping a zero update.
+- **matplotlib.** modOpt calls `matplotlib.use("TkAgg")` at import. Left
+  alone, that call changes plotting for the whole process:
+  - with a display (a laptop, a notebook), building `opensqp` switches
+    the backend to TkAgg, so later figures open in windows instead of
+    the page;
+  - without one, if pyplot is not loaded yet, every later figure fails
+    with "Cannot load backend 'TkAgg'".
+
+  Today `l2co_optimizers` happens to load pyplot first, through f3dasm,
+  which hides the second case on Oscar. f3dasm made matplotlib optional
+  (f3dasm #301), so that may not last, and it never helped the first
+  case. The factory makes `matplotlib.use` do nothing while it imports
+  modOpt. OpenSQP never plots, so nothing is lost.
 
 ## Config group
 

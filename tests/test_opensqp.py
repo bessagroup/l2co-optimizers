@@ -14,7 +14,8 @@ checked are those of ``test_ipopt.py``, plus OpenSQP's own:
    re-evaluated to the budget;
 5. every evaluated point lies in ``bounded``;
 6. the settings that make a run last its budget, and keep it off the
-   wall clock, reach OpenSQP, and it writes no files;
+   wall clock, reach OpenSQP; it writes no files, and importing modOpt
+   leaves matplotlib's backend alone;
 7. ``stop_fn`` raises, ``step`` raises, it does not unpack into switching
    parts, and realizations run one at a time.
 
@@ -29,6 +30,8 @@ does without modOpt is tested in ``test_opensqp_dependency.py``.
 
 # Standard
 import os
+import subprocess
+import sys
 
 # Third-party
 import jax
@@ -301,6 +304,25 @@ def test_writes_no_files(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     _run(_build("opensqp", bounded=(-1.0, 0.2)), 50)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_leaves_the_matplotlib_backend_alone():
+    """modOpt calls ``matplotlib.use("TkAgg")`` at import. With a display
+    that would switch the whole process to TkAgg; without one, before
+    pyplot is loaded, it breaks every later figure. A fresh interpreter,
+    so modOpt is imported for the first time here."""
+    code = (
+        "import matplotlib\n"
+        "calls = []\n"
+        "matplotlib.use = lambda *args, **kwargs: calls.append(args)\n"
+        "from l2co_optimizers._src.opensqp import _modopt\n"
+        "_modopt()\n"
+        "assert calls == [], calls\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
 
 
 def test_unknown_hyperparameters_are_rejected():

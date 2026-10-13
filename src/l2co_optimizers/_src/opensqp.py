@@ -47,9 +47,11 @@ Four things are specific to OpenSQP:
 # Standard
 from __future__ import annotations
 
+import contextlib
 import functools
 import warnings
 from collections import OrderedDict
+from collections.abc import Iterator
 from typing import Any
 
 # Third-party
@@ -111,6 +113,26 @@ _INSTALL_HINT = (
 # =============================================================================
 
 
+@contextlib.contextmanager
+def _matplotlib_use_ignored() -> Iterator[None]:
+    """Make ``matplotlib.use`` do nothing for the duration.
+
+    modOpt's visualization module, which every ``from modopt import``
+    loads, calls ``matplotlib.use("TkAgg")``. With a display that
+    switches the whole process to TkAgg, so a notebook's figures leave
+    the page; without one, before pyplot is loaded, it breaks every later
+    figure. OpenSQP never plots (ADR 0010).
+    """
+    import matplotlib
+
+    use = matplotlib.use
+    matplotlib.use = lambda *args, **kwargs: None
+    try:
+        yield
+    finally:
+        matplotlib.use = use
+
+
 @functools.cache
 def _modopt() -> tuple[type, type]:
     """modOpt's ``OpenSQP`` and ``ProblemLite``, and the QP solvers.
@@ -121,11 +143,9 @@ def _modopt() -> tuple[type, type]:
         If LSDOlab's modOpt or a QP solver OpenSQP needs is missing.
     """
     try:
-        # Import-time noise from modules OpenSQP does not use (invalid
-        # escapes, deprecated scipy paths), and "matplotlib not found":
-        # modOpt asks for TkAgg, which fails once pyplot is loaded, as
-        # f3dasm loads it, and leaves the backend as it was (ADR 0010).
-        with warnings.catch_warnings():
+        # Import-time noise from modules OpenSQP does not use: invalid
+        # escapes and deprecated scipy paths (ADR 0010).
+        with warnings.catch_warnings(), _matplotlib_use_ignored():
             warnings.simplefilter("ignore")
             from modopt import OpenSQP, ProblemLite
         import highspy  # noqa: F401
