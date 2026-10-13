@@ -1,8 +1,9 @@
 """Every registry entry declares how far it can enforce constraints (ADR
 0008).
 
-The built-ins' levels themselves are pinned by the "Constraints" column
-of the README's optimizer table (``test_readme_optimizer_table.py``).
+The built-ins' levels themselves are pinned by the Unconstrained,
+Constrained and Box constraints columns of the README's optimizer table
+(``test_readme_optimizer_table.py``).
 These tests cover the lookup and what ``register_optimizer`` records.
 """
 

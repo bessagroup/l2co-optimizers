@@ -84,8 +84,10 @@ after the state has already moved:
   other entry is `none`.
 - `register_optimizer` takes `constraint_handling=`, default `none`, so
   an external optimizer that only clips needs to say nothing.
-- The README and docs optimizer tables gain a "Constraints" column.
-  `tests/test_readme_optimizer_table.py` checks it against
+- The README and docs optimizer tables gain three columns,
+  Unconstrained, Constrained and Box constraints, each a check or a
+  cross. `none` is ✓ ✗ ✗, `box` is ✓ ✗ ✓ and `general` is ✓ ✓ ✓.
+  `tests/test_readme_optimizer_table.py` checks them against
   `constraint_handling`, so a new built-in gets a level when its row is
   written.
 
