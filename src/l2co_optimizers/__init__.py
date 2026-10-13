@@ -29,6 +29,12 @@ and ``batch_size``; turning an ``l2co_tasks.Task`` into those is
 
 # Local
 from l2co_optimizers._src.core.batching import BatchState
+from l2co_optimizers._src.core.constraint_handling import (
+    CONSTRAINT_HANDLING_LEVELS,
+    CONSTRAINTS_BOX,
+    CONSTRAINTS_GENERAL,
+    CONSTRAINTS_NONE,
+)
 from l2co_optimizers._src.core.experimentdata import (
     create_schedules_experimentdata,
 )
@@ -101,6 +107,7 @@ from l2co_optimizers._src.core.utils import normalize_key
 from l2co_optimizers._src.evosax_implementations import normalized_evosax
 from l2co_optimizers._src.lbfgs import lbfgs_mapping
 from l2co_optimizers._src.mapping import (
+    constraint_handling,
     optimizer_mapping,
     optimizers,
     register_optimizer,
@@ -132,6 +139,10 @@ __all__ = [
     "CONF_ABSENT",
     "CONF_ESTIMATED",
     "CONF_EXACT",
+    "CONSTRAINT_HANDLING_LEVELS",
+    "CONSTRAINTS_BOX",
+    "CONSTRAINTS_GENERAL",
+    "CONSTRAINTS_NONE",
     "FAMILIES",
     "FAMILY_DERIVATIVE_FREE",
     "FAMILY_DISTRIBUTION",
@@ -165,6 +176,7 @@ __all__ = [
     "batch_evaluate",
     "batch_reset",
     "build_transfer_fns",
+    "constraint_handling",
     "constant_sampling",
     "count_parameters",
     "create_schedules_experimentdata",

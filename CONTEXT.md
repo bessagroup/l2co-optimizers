@@ -37,6 +37,16 @@ Every factory takes the same keywords — `model=`, `loss_fn=`,
 optimizer; meta-optimizers, which need a whole task, register with
 `l2co.register_optimizer` instead.
 
+**Constraint handling**:
+How far a registry entry can enforce a task's constraints
+(`constraint_handling(name)`, ADR 0008): `none` (candidates are only
+clipped to `bounded`; the optimizer's own state never learns they were
+moved), `box` (it keeps its own state inside the box) or `general` (its
+solver also takes inequality and equality constraints, which nothing
+passes it yet). Declared per entry, read by name, never inferred from
+`bounded`.
+_Avoid_: "bounded optimizer" for an entry that only clips
+
 **UpdateClass**:
 The static, JIT-friendly container one optimizer is reduced to:
 `init_fn`, `step_fn`, `popsize`, `hash`, `stop_fn`, and the handshake

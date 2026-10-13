@@ -8,6 +8,12 @@ The whole public surface is the flat `l2co_optimizers` namespace. It holds what 
 
 ::: l2co_optimizers.register_optimizer
 
+### Constraint handling
+
+Each registry entry declares how far it can enforce constraints: `CONSTRAINTS_NONE` (`"none"`, candidates are only clipped to `bounded`), `CONSTRAINTS_BOX` (`"box"`, the optimizer keeps its own state inside the box) or `CONSTRAINTS_GENERAL` (`"general"`, the solver also takes inequality and equality constraints, which nothing passes it yet). `CONSTRAINT_HANDLING_LEVELS` lists them weakest first. `register_optimizer` takes the level as `constraint_handling=` ([ADR 0008](https://github.com/bessagroup/l2co-optimizers/blob/develop/docs/adr/0008-constraint-handling-per-registry-entry.md)).
+
+::: l2co_optimizers.constraint_handling
+
 ::: l2co_optimizers.UpdateClass
 
 ::: l2co_optimizers.create_schedules_experimentdata
