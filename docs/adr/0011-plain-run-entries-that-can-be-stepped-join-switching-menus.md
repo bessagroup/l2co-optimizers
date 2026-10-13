@@ -46,7 +46,7 @@ menu needs one of them.
 ## One rule: `params` is the solver's next evaluation point
 
 `GradientParts` and `PopulationParts` stay the only two kinds of parts.
-Nothing changes in l2co's `SubOpt` or in rl2co's wrappers.
+l2co's `SubOpt` keeps its shape.
 
 The five gradient solvers become `GradientParts` under one invariant:
 **the `params` a loop holds is always the point the solver will
@@ -54,8 +54,20 @@ evaluate next.** The loop evaluates value and gradient at `params`, as
 it does for every optax transform. `update` hands both to the solver
 through a stub objective, a `jax.custom_jvp` that returns the loop's
 value and gradient. It then returns `x_next - params`. One step is one
-evaluation and bills 1. No `value_fn` is needed, so these entries also
-work in rl2co's `optax_wrapper`, which cannot supply one.
+evaluation and bills 1. No `value_fn` is needed.
+
+The loss value itself is needed, though, because a line search compares
+losses. It arrives as `update`'s `value=` keyword, which optax's
+line-search transforms already take. Until now a consumer forwarded it
+only alongside a `value_fn`, and rl2co's `optax_wrapper` never did. So
+every consumer now forwards `value` and `grad` on every gradient step:
+
+- l2co's `strategy_wrapper` (l2co#86);
+- rl2co's `evosax_wrapper` and `optax_wrapper`.
+
+All 27 optax transforms in the registry accept and ignore both.
+`update` raises a `ValueError` naming the missing keyword when a
+consumer does not forward it.
 
 A third parts kind (`init` / `step(value_fn, ...)`, ADR 0001's sketch)
 was rejected. It would need a new `SubOpt` branch in l2co and support
@@ -171,7 +183,8 @@ the per-entry constraint declarations of ADR 0008.
 
 ## Rollout
 
-1. l2co#86: the six handshake rows.
+1. l2co#86: the six handshake rows, and `strategy_wrapper` forwarding
+   `value`; the rl2co PR that makes its two wrappers forward it.
 2. This ADR and `randomsearch`'s parts.
 3. The optimistix trio's parts.
 4. The `neldermead` rewrite.
