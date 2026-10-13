@@ -636,6 +636,40 @@ read_sigma_lbfgs = make_read_sigma_lbfgs()
 """The L-BFGS reader for ``optax.lbfgs``'s own defaults."""
 
 
+def read_sigma_solver_step(opt_state: PyTree) -> tuple[Array, Array]:
+    """Read the scale off a solver that evaluates the objective itself.
+
+    Such a solver (``bfgs``, ``dfp``, ``nonlinearcg``; ADR 0011) keeps
+    its last accepted iterate ``y`` and, in its own state, the point it
+    will evaluate next, ``solver_state.y_eval``. Their difference is the
+    trial step it is about to take: its search scale, as a length. It is
+    only :data:`CONF_ESTIMATED`, because a line search may yet shorten
+    it. Before the first step, and whenever the solver idles, the two
+    coincide, and the zero step reads as absence.
+
+    Parameters
+    ----------
+    opt_state : PyTree
+        The solver's state: anything with a ``y`` and a
+        ``solver_state.y_eval`` of the same structure.
+
+    Returns
+    -------
+    tuple[Array, Array]
+        ``(sigma, conf_sigma)``.
+    """
+    y = getattr(opt_state, "y", None)
+    y_eval = getattr(getattr(opt_state, "solver_state", None), "y_eval", None)
+    if y is None or y_eval is None:
+        return jnp.asarray(0.0), jnp.asarray(CONF_ABSENT)
+    step = jax.tree.map(
+        lambda a, b: jnp.asarray(b, dtype=float) - jnp.asarray(a, dtype=float),
+        y,
+        y_eval,
+    )
+    return _finite_or_absent(_rms(step), CONF_ESTIMATED)
+
+
 def read_sigma_absent(opt_state: PyTree) -> tuple[Array, Array]:
     """Report no scale information, for optimizers that hold none.
 
@@ -1242,6 +1276,14 @@ TRANSFER_OVERRIDES: dict[str, TransferSpec] = {
     "rprop": TransferSpec(FAMILY_GRADIENT, "rprop", "rprop"),
     # Its last accepted step is in the state; nothing survives a write.
     "lbfgs": TransferSpec(FAMILY_GRADIENT, "lbfgs", "none"),
+    # The solvers that evaluate the objective themselves (ADR 0011). The
+    # trial step they are about to take is in the state; after the
+    # ``reset`` handshake they restart from H = I (or steepest descent)
+    # and the line search's ``step_init``, with no slot a carried scale
+    # survives in -- the same position as ``lbfgs``.
+    "bfgs": TransferSpec(FAMILY_GRADIENT, "solver_step", "none"),
+    "dfp": TransferSpec(FAMILY_GRADIENT, "solver_step", "none"),
+    "nonlinearcg": TransferSpec(FAMILY_GRADIENT, "solver_step", "none"),
     # The mutation GAs. Each adapts against its *own stored* baseline on
     # the next generation -- MR15-GA's 1/5 rule reads ``state.fitness``
     # (``mr15_ga.py:96``), GESMR-GA ranks its std groups by
@@ -1365,6 +1407,7 @@ def build_transfer_fns(
             hyperparameters.get("scale_init_precond", True),
             hyperparameters.get("learning_rate", None),
         ),
+        "solver_step": read_sigma_solver_step,
         "none": read_sigma_absent,
     }
 

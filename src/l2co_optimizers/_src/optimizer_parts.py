@@ -62,7 +62,9 @@ from l2co_optimizers._src.optax_implementations import (
     normalized_optax_normal,
 )
 from l2co_optimizers._src.optimistix_implementations import (
+    GRADIENT_SOLVERS,
     OPTIMISTIX_OPTIMIZERS,
+    solver_transform,
 )
 from l2co_optimizers._src.random_search import (
     RANDOM_SEARCH_OPTIMIZERS,
@@ -93,13 +95,16 @@ __all__ = [
 ]
 
 #: Registry names that run only as plain registry entries (normalized). Their
-#: solver evaluates the objective itself -- an optimistix minimiser (ADR
-#: 0001), a scipy minimiser (ADR 0002), IPOPT (ADR 0003) -- so
+#: solver owns the loop or cannot yet be stepped by one -- Nelder--Mead
+#: (ADR 0001), the scipy minimisers (ADR 0002), IPOPT (ADR 0003) -- so
 #: :func:`optimizer_parts` refuses them, and they can never be a sub-optimizer
 #: in a switching menu or an rl2co action. A caller assembling a menu from a
-#: configured suite leaves these out.
+#: configured suite leaves these out. ADR 0011 takes the steppable ones off
+#: this list in stages; the optimistix gradient solvers are off it already.
 PLAIN_RUN_OPTIMIZERS: frozenset[str] = (
-    OPTIMISTIX_OPTIMIZERS | SCIPY_OPTIMIZERS | IPOPT_OPTIMIZERS
+    (OPTIMISTIX_OPTIMIZERS - frozenset(GRADIENT_SOLVERS))
+    | SCIPY_OPTIMIZERS
+    | IPOPT_OPTIMIZERS
 )
 
 
@@ -302,9 +307,10 @@ def optimizer_parts(
     normalized_optax_normal`, :data:`...normalized_optax_from_state`,
     :data:`l2co_native_optax` (e.g. ``'lbfgs'``), :data:`~l2co_optimizers.
     _src.evosax_implementations.normalized_evosax`,
-    :data:`l2co_native_evosax` (e.g. ``'shade'``) and
-    ``RANDOM_SEARCH_OPTIMIZERS``. Population size is
-    resolved by :func:`resolve_popsize`, so it always equals the
+    :data:`l2co_native_evosax` (e.g. ``'shade'``),
+    ``RANDOM_SEARCH_OPTIMIZERS`` and the optimistix ``GRADIENT_SOLVERS``
+    (``'bfgs'``, ``'dfp'``, ``'nonlinearcg'``; ADR 0011). Population
+    size is resolved by :func:`resolve_popsize`, so it always equals the
     ``UpdateClass`` factory's.
 
     Note that this path has no ``bounded`` channel: algorithms whose
@@ -354,9 +360,9 @@ def optimizer_parts(
     ------
     ValueError
         If ``opt_step.optimizer`` is not found in any of the registries,
-        including when it names one of the optimistix minimisers (ADR
-        0001), the scipy minimisers (ADR 0002) or IPOPT (ADR 0003),
-        which have no parts representation.
+        including when it names Nelder--Mead (ADR 0001), the scipy
+        minimisers (ADR 0002) or IPOPT (ADR 0003), which have no parts
+        representation.
     """
     name = normalize_key(opt_step.optimizer)
     hyperparams = dict(opt_step.hyperparameters)
@@ -396,6 +402,23 @@ def optimizer_parts(
             max_fevals_per_step=(
                 None if bound_fn is None else bound_fn(hyperparams)
             ),
+            family=FAMILY_GRADIENT,
+            transfer_read_fn=read_fn,
+            transfer_write_fn=write_fn,
+        )
+
+    # --- optimistix gradient solvers -----------------------------------
+    if name in GRADIENT_SOLVERS:
+        # The registry factory's own solver, driven as an optax transform
+        # whose ``params`` is always the solver's next evaluation point
+        # (ADR 0011). One evaluation per step, so no feval bound.
+        read_fn, write_fn = build_transfer_fns(
+            name, FAMILY_GRADIENT, hyperparams
+        )
+        return GradientParts(
+            transform=solver_transform(GRADIENT_SOLVERS[name](**hyperparams)),
+            name_hash=int(opt_step.hash),
+            max_fevals_per_step=None,
             family=FAMILY_GRADIENT,
             transfer_read_fn=read_fn,
             transfer_write_fn=write_fn,
@@ -665,12 +688,13 @@ def optimizer_parts(
 
     if name in OPTIMISTIX_OPTIMIZERS:
         raise ValueError(
-            f"Optimizer {opt_step.optimizer!r} is an optimistix minimiser, "
-            f"which cannot be unpacked into parts: it evaluates the "
-            f"objective itself, so it is neither an optax transform "
+            f"Optimizer {opt_step.optimizer!r} is optimistix's "
+            f"Nelder-Mead, which cannot be unpacked into parts yet: a step "
+            f"evaluates two or more points, the second chosen from the "
+            f"first's loss, so it is neither an optax transform "
             f"(GradientParts) nor an ask/tell population (PopulationParts). "
             f"It runs only as a plain registry entry, not inside a "
-            f"switching menu (ADR 0001)."
+            f"switching menu (ADRs 0001, 0011)."
         )
 
     if name in SCIPY_OPTIMIZERS:
@@ -696,8 +720,8 @@ def optimizer_parts(
         f"Optimizer {opt_step.optimizer!r} cannot be unpacked into "
         f"parts: it is absent from normalized_optax_normal, "
         f"normalized_optax_from_state, l2co_native_optax, "
-        f"normalized_evosax, l2co_native_evosax and "
-        f"RANDOM_SEARCH_OPTIMIZERS. Note these are "
+        f"normalized_evosax, l2co_native_evosax, "
+        f"RANDOM_SEARCH_OPTIMIZERS and GRADIENT_SOLVERS. Note these are "
         f"narrower than the optimizer registry — an optimizer that "
         f"``optimizer_mapping`` resolves may still be missing here. "
         f"Add it to the matching registry, or hand-build the switching "

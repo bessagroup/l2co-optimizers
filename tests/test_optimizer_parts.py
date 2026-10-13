@@ -46,6 +46,7 @@ from l2co_optimizers._src.optax_implementations import (
     normalized_optax_from_state,
     normalized_optax_normal,
 )
+from l2co_optimizers._src.optimistix_implementations import GRADIENT_SOLVERS
 from l2co_optimizers._src.optimizer_parts import (
     l2co_native_evosax,
     l2co_native_optax,
@@ -67,11 +68,11 @@ __status__ = "Stable"
 # though they are absent from this suite's registry.
 META_OPTIMIZERS = frozenset({"l2co", "rl2co"})
 
-# The optimistix minimisers evaluate the objective themselves, which is
-# neither an optax transform nor an ask/tell population, so they are
-# plain-run entries only (ADR 0001). The scipy minimisers run their whole
-# budget inside one host callback, so they have no step to unpack at all
-# (ADR 0002); so does IPOPT (ADR 0003).
+# Nelder--Mead evaluates two or more dependent points per step, which is
+# neither an optax transform nor an ask/tell population, so it is a
+# plain-run entry for now (ADRs 0001, 0011). The scipy minimisers run their
+# whole budget inside one host callback, so they have no step to unpack at
+# all (ADR 0002); so does IPOPT (ADR 0003).
 NON_PARTS_OPTIMIZERS = META_OPTIMIZERS | PLAIN_RUN_OPTIMIZERS
 
 
@@ -84,6 +85,7 @@ def _parts_registries() -> set[str]:
         | set(normalized_evosax)
         | set(l2co_native_evosax)
         | set(RANDOM_SEARCH_OPTIMIZERS)
+        | set(GRADIENT_SOLVERS)
     )
 
 

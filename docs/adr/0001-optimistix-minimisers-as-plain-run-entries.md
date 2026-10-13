@@ -101,7 +101,10 @@ An optimistix solver evaluates the objective itself. It is not an optax
 is not an ask/tell population. `optimizer_parts` raises a ValueError that
 names this, and no handshake policy or transfer ports are defined. Putting one
 in a switching menu would need a third parts kind (`init` / `step(fn)`) and a
-matching SubOpt adapter in l2co. That is a separate decision.
+matching SubOpt adapter in l2co. That is a separate decision. (Taken in ADR
+0011, without a third kind: `bfgs`, `dfp` and `nonlinearcg` unpack into
+`GradientParts` whose `params` is always the solver's next evaluation point,
+fed the loop's own loss and gradient. `neldermead` still does not unpack.)
 
 **Realizations.** Under the fused driver the realization axis is vmapped,
 and that turns optimistix's `lax.cond` into a select. For Nelder–Mead the

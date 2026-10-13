@@ -66,7 +66,7 @@ To run on an `l2co_tasks.Task`, use l2co: its `init_run_state` builds this `RunS
 
 The package ships ready-made `optimizers` config groups under `l2co_optimizers/conf/optimizers/`, installed as package data. Each YAML is a list of `OptimizationStep` specs:
 - **single-optimizer sweeps:** `adam`, `sepcmaes`, `lr_sweep_pde`;
-- **the optimistix minimisers at their defaults (plain runs only):** `optimistix`;
+- **the optimistix minimisers at their defaults (`neldermead` plain runs only):** `optimistix`;
 - **the scipy minimisers at their defaults (plain runs only):** `scipy`;
 - **IPOPT at its defaults (plain runs only):** `ipopt`;
 - **the solvers of modOpt's CUTEst benchmark, without SNOPT (plain runs only):** `modopt`;
