@@ -72,6 +72,7 @@ from l2co_optimizers._src.random_search import (
 )
 from l2co_optimizers._src.rbf_trust_region import RBFTrustRegion
 from l2co_optimizers._src.scipy_implementations import SCIPY_OPTIMIZERS
+from l2co_optimizers._src.scipy_stepped import STEPPED_SCIPY_TRANSFORMS
 from l2co_optimizers._src.shade import SHADE
 from l2co_optimizers._src.turbo import TuRBO
 
@@ -100,7 +101,8 @@ __all__ = [
 #: :func:`optimizer_parts` refuses them, and they can never be a sub-optimizer
 #: in a switching menu or an rl2co action. A caller assembling a menu from a
 #: configured suite leaves these out. ADR 0011 takes the steppable ones off
-#: this list in stages; the optimistix gradient solvers are off it already.
+#: this list in stages; the optimistix gradient solvers and scipy's
+#: L-BFGS-B are off it already.
 PLAIN_RUN_OPTIMIZERS: frozenset[str] = (
     (OPTIMISTIX_OPTIMIZERS - frozenset(GRADIENT_SOLVERS))
     | SCIPY_OPTIMIZERS
@@ -308,16 +310,18 @@ def optimizer_parts(
     :data:`l2co_native_optax` (e.g. ``'lbfgs'``), :data:`~l2co_optimizers.
     _src.evosax_implementations.normalized_evosax`,
     :data:`l2co_native_evosax` (e.g. ``'shade'``),
-    ``RANDOM_SEARCH_OPTIMIZERS`` and the optimistix ``GRADIENT_SOLVERS``
-    (``'bfgs'``, ``'dfp'``, ``'nonlinearcg'``; ADR 0011). Population
+    ``RANDOM_SEARCH_OPTIMIZERS``, the optimistix ``GRADIENT_SOLVERS``
+    (``'bfgs'``, ``'dfp'``, ``'nonlinearcg'``) and the stepped scipy
+    minimisers (``'lbfgsb'``; both ADR 0011). Population
     size is resolved by :func:`resolve_popsize`, so it always equals the
     ``UpdateClass`` factory's.
 
-    Note that this path has no ``bounded`` channel: algorithms whose
-    internals use box bounds (SHADE's midpoint boundary repair and
-    turning-based mutation) receive them as ordinary ``x_min`` /
-    ``x_max`` hyperparameters instead; without them SHADE runs
-    unbounded (its repair degrades to a no-op).
+    Note that this path has no ``bounded`` channel: ``'lbfgsb'`` runs
+    unbounded here, though its registry entry hands scipy the box, and
+    algorithms whose internals use box bounds (SHADE's midpoint boundary
+    repair and turning-based mutation) receive them as ordinary
+    ``x_min`` / ``x_max`` hyperparameters instead; without them SHADE
+    runs unbounded (its repair degrades to a no-op).
 
     Nor does it have a per-evaluation-key channel: the ``value_fn``
     reaching a line search here is the caller's plain ``params ->
@@ -417,6 +421,23 @@ def optimizer_parts(
         )
         return GradientParts(
             transform=solver_transform(GRADIENT_SOLVERS[name](**hyperparams)),
+            name_hash=int(opt_step.hash),
+            max_fevals_per_step=None,
+            family=FAMILY_GRADIENT,
+            transfer_read_fn=read_fn,
+            transfer_write_fn=write_fn,
+        )
+
+    # --- stepped scipy minimisers --------------------------------------
+    if name in STEPPED_SCIPY_TRANSFORMS:
+        # The registry factory's transform, built without a box: the parts
+        # path has no bounds channel yet (ADR 0011). One evaluation per
+        # step, so no feval bound.
+        read_fn, write_fn = build_transfer_fns(
+            name, FAMILY_GRADIENT, hyperparams
+        )
+        return GradientParts(
+            transform=STEPPED_SCIPY_TRANSFORMS[name](**hyperparams),
             name_hash=int(opt_step.hash),
             max_fevals_per_step=None,
             family=FAMILY_GRADIENT,
@@ -721,7 +742,8 @@ def optimizer_parts(
         f"parts: it is absent from normalized_optax_normal, "
         f"normalized_optax_from_state, l2co_native_optax, "
         f"normalized_evosax, l2co_native_evosax, "
-        f"RANDOM_SEARCH_OPTIMIZERS and GRADIENT_SOLVERS. Note these are "
+        f"RANDOM_SEARCH_OPTIMIZERS, GRADIENT_SOLVERS and "
+        f"STEPPED_SCIPY_TRANSFORMS. Note these are "
         f"narrower than the optimizer registry — an optimizer that "
         f"``optimizer_mapping`` resolves may still be missing here. "
         f"Add it to the matching registry, or hand-build the switching "

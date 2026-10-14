@@ -52,6 +52,7 @@ from l2co_optimizers._src.optimizer_parts import (
     l2co_native_optax,
 )
 from l2co_optimizers._src.random_search import RANDOM_SEARCH_OPTIMIZERS
+from l2co_optimizers._src.scipy_stepped import STEPPED_SCIPY_TRANSFORMS
 
 from .toy_problems import sphere_problem
 
@@ -70,9 +71,10 @@ META_OPTIMIZERS = frozenset({"l2co", "rl2co"})
 
 # Nelder--Mead evaluates two or more dependent points per step, which is
 # neither an optax transform nor an ask/tell population, so it is a
-# plain-run entry for now (ADRs 0001, 0011). The scipy minimisers run their
-# whole budget inside one host callback, so they have no step to unpack at
-# all (ADR 0002); so does IPOPT (ADR 0003).
+# plain-run entry for now (ADRs 0001, 0011). The whole-run scipy minimisers
+# run their budget inside one host callback, so they have no step to unpack
+# at all (ADR 0002); so does IPOPT (ADR 0003). scipy's L-BFGS-B is stepped
+# one evaluation at a time instead, so it unpacks (ADR 0011).
 NON_PARTS_OPTIMIZERS = META_OPTIMIZERS | PLAIN_RUN_OPTIMIZERS
 
 
@@ -86,6 +88,7 @@ def _parts_registries() -> set[str]:
         | set(l2co_native_evosax)
         | set(RANDOM_SEARCH_OPTIMIZERS)
         | set(GRADIENT_SOLVERS)
+        | set(STEPPED_SCIPY_TRANSFORMS)
     )
 
 

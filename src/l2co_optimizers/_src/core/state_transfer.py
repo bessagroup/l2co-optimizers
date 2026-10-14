@@ -670,6 +670,35 @@ def read_sigma_solver_step(opt_state: PyTree) -> tuple[Array, Array]:
     return _finite_or_absent(_rms(step), CONF_ESTIMATED)
 
 
+def read_sigma_eval_step(opt_state: PyTree) -> tuple[Array, Array]:
+    """Read the scale off a stepped solver's last move between evaluations.
+
+    A solver driven one evaluation at a time (``lbfgsb``; ADR 0011)
+    keeps the point it evaluates next, ``x``, and the point it evaluated
+    before, ``x_prev``. Their difference is its latest move, line-search
+    trials included, so it is only :data:`CONF_ESTIMATED`. Before the
+    first step, and whenever the solver idles, the two coincide, and the
+    zero step reads as absence.
+
+    Parameters
+    ----------
+    opt_state : PyTree
+        The solver's state: anything with flat ``x`` and ``x_prev``
+        arrays.
+
+    Returns
+    -------
+    tuple[Array, Array]
+        ``(sigma, conf_sigma)``.
+    """
+    x = getattr(opt_state, "x", None)
+    x_prev = getattr(opt_state, "x_prev", None)
+    if x is None or x_prev is None:
+        return jnp.asarray(0.0), jnp.asarray(CONF_ABSENT)
+    step = jnp.asarray(x, dtype=float) - jnp.asarray(x_prev, dtype=float)
+    return _finite_or_absent(_rms(step), CONF_ESTIMATED)
+
+
 def read_sigma_absent(opt_state: PyTree) -> tuple[Array, Array]:
     """Report no scale information, for optimizers that hold none.
 
@@ -1284,6 +1313,10 @@ TRANSFER_OVERRIDES: dict[str, TransferSpec] = {
     "bfgs": TransferSpec(FAMILY_GRADIENT, "solver_step", "none"),
     "dfp": TransferSpec(FAMILY_GRADIENT, "solver_step", "none"),
     "nonlinearcg": TransferSpec(FAMILY_GRADIENT, "solver_step", "none"),
+    # Stepped scipy (ADR 0011): its last move between evaluations is in
+    # the state; the Fortran workspace has no slot a carried scale
+    # survives in, and ``reset`` restarts it anyway.
+    "lbfgsb": TransferSpec(FAMILY_GRADIENT, "eval_step", "none"),
     # The mutation GAs. Each adapts against its *own stored* baseline on
     # the next generation -- MR15-GA's 1/5 rule reads ``state.fitness``
     # (``mr15_ga.py:96``), GESMR-GA ranks its std groups by
@@ -1408,6 +1441,7 @@ def build_transfer_fns(
             hyperparameters.get("learning_rate", None),
         ),
         "solver_step": read_sigma_solver_step,
+        "eval_step": read_sigma_eval_step,
         "none": read_sigma_absent,
     }
 
