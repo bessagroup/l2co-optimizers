@@ -401,6 +401,53 @@ class RandomSearchUpdateClass(UpdateClass):
         )
 
 
+def random_search_sampling_fn(
+    model: PyTree,
+    sampler: str = "random",
+    **sampler_kwargs: Any,
+) -> Callable[[PRNGKeyArray, int], InputParameters]:
+    """Build random search's candidate sampler.
+
+    Shared by the registry factory and the parts path
+    (:func:`~l2co_optimizers._src.optimizer_parts.optimizer_parts`), so
+    both draw from the same distribution. Candidates are drawn around
+    ``model``'s own parameters, never around a point a caller hands in:
+    random search explores the task's starting distribution, whichever
+    optimizer ran before it.
+
+    Parameters
+    ----------
+    model : PyTree
+        Model whose inexact-array leaves the candidates are shaped like
+        (and, for a sampler that reads values, drawn around).
+    sampler : str, optional
+        Sampler name, resolved via
+        :func:`l2co_optimizers._src.core.sampler.get_sampler`. Default
+        ``"random"``.
+    **sampler_kwargs : Any
+        Forwarded to the sampler.
+
+    Returns
+    -------
+    Callable[[PRNGKeyArray, int], InputParameters]
+        ``sampling_fn(key, n_samples)``, returning candidates with a
+        leading axis of ``n_samples``.
+    """
+    model_params = eqx.filter(model, eqx.is_inexact_array)
+    sampler_fn = get_sampler(sampler)
+
+    def sampling_fn(key: PRNGKeyArray, n_samples: int) -> InputParameters:
+        """Draw ``n_samples`` candidates shaped like ``model``."""
+        return sampler_fn(
+            key,
+            params=model_params,
+            n_samples=n_samples,
+            **sampler_kwargs,
+        )
+
+    return sampling_fn
+
+
 def random_search_update(
     *,
     model: PyTree,
@@ -465,17 +512,8 @@ def random_search_update(
     """
     del stop_fn  # accepted but unused; see docstring
     popsize = resolve_popsize(popsize, model)
-    model_params, static_model = eqx.partition(model, eqx.is_inexact_array)
-    sampler_fn = get_sampler(sampler)
-
-    def sampling_fn(key: PRNGKeyArray, n_samples: int) -> InputParameters:
-        """Draw ``n_samples`` candidates shaped like ``model``."""
-        return sampler_fn(
-            key,
-            params=model_params,
-            n_samples=n_samples,
-            **sampler_kwargs,
-        )
+    _, static_model = eqx.partition(model, eqx.is_inexact_array)
+    sampling_fn = random_search_sampling_fn(model, sampler, **sampler_kwargs)
 
     # Random search carries no state between iterations, so there is
     # nothing for a switch to hand over or receive: ``transfer_read_fn``
@@ -497,3 +535,7 @@ def random_search_update(
 # =============================================================================
 
 random_search_mapping = {"randomsearch": Partial(random_search_update)}
+
+#: Registry names served by this module (normalized). The parts path
+#: dispatches on it.
+RANDOM_SEARCH_OPTIMIZERS: frozenset[str] = frozenset(random_search_mapping)

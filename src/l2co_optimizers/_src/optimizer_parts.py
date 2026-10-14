@@ -64,6 +64,10 @@ from l2co_optimizers._src.optax_implementations import (
 from l2co_optimizers._src.optimistix_implementations import (
     OPTIMISTIX_OPTIMIZERS,
 )
+from l2co_optimizers._src.random_search import (
+    RANDOM_SEARCH_OPTIMIZERS,
+    random_search_sampling_fn,
+)
 from l2co_optimizers._src.rbf_trust_region import RBFTrustRegion
 from l2co_optimizers._src.scipy_implementations import SCIPY_OPTIMIZERS
 from l2co_optimizers._src.shade import SHADE
@@ -297,8 +301,9 @@ def optimizer_parts(
     :data:`~l2co_optimizers._src.optax_implementations.
     normalized_optax_normal`, :data:`...normalized_optax_from_state`,
     :data:`l2co_native_optax` (e.g. ``'lbfgs'``), :data:`~l2co_optimizers.
-    _src.evosax_implementations.normalized_evosax`, and
-    :data:`l2co_native_evosax` (e.g. ``'shade'``). Population size is
+    _src.evosax_implementations.normalized_evosax`,
+    :data:`l2co_native_evosax` (e.g. ``'shade'``) and
+    ``RANDOM_SEARCH_OPTIMIZERS``. Population size is
     resolved by :func:`resolve_popsize`, so it always equals the
     ``UpdateClass`` factory's.
 
@@ -562,6 +567,102 @@ def optimizer_parts(
             own_ask=spec.own_ask,
         )
 
+    # --- Random search -------------------------------------------------
+    if name in RANDOM_SEARCH_OPTIMIZERS:
+        # Same sampler as the registry factory, so a switch into random
+        # search draws what a plain random-search run draws: candidates
+        # from the task's starting distribution, independent of the
+        # point the loop hands in (ADR 0011).
+        sampling_fn = random_search_sampling_fn(model, **hyperparams)
+
+        def init_fn(params: PyTree, key: PRNGKeyArray) -> Array:
+            """Return the placeholder state; random search holds none.
+
+            Parameters
+            ----------
+            params : PyTree
+                Unused.
+            key : PRNGKeyArray
+                Unused.
+
+            Returns
+            -------
+            Array
+                A scalar placeholder, as the registry path's ``init_fn``
+                returns.
+            """
+            del params, key
+            return jnp.array(0, dtype=int)
+
+        def ask_fn(
+            params: PyTree,
+            opt_state: Array,
+            key: PRNGKeyArray,
+        ) -> tuple[PyTree, Array]:
+            """Draw ``popsize`` fresh candidates.
+
+            Parameters
+            ----------
+            params : PyTree
+                Unused: candidates are drawn around the model, not
+                around the current point.
+            opt_state : Array
+                Placeholder state, returned unchanged.
+            key : PRNGKeyArray
+                Sampling key.
+
+            Returns
+            -------
+            tuple[PyTree, Array]
+                ``(population, opt_state)`` with ``population`` of shape
+                ``(popsize, *params_shape)``.
+            """
+            del params
+            return sampling_fn(key, popsize), opt_state
+
+        def tell_fn(
+            opt_state: Array,
+            population: PyTree,
+            fitnesses: Float[Array, " popsize"],
+            key: PRNGKeyArray,
+        ) -> Array:
+            """Learn nothing from the fitnesses.
+
+            Parameters
+            ----------
+            opt_state : Array
+                Placeholder state.
+            population : PyTree
+                Unused.
+            fitnesses : Float[Array, " popsize"]
+                Unused.
+            key : PRNGKeyArray
+                Unused.
+
+            Returns
+            -------
+            Array
+                ``opt_state``, unchanged.
+            """
+            del population, fitnesses, key
+            return opt_state
+
+        spec = transfer_spec_for(name, FAMILY_POPULATION)
+        read_fn, write_fn = build_transfer_fns(
+            name, FAMILY_POPULATION, hyperparams
+        )
+        return PopulationParts(
+            init_fn=init_fn,
+            ask_fn=ask_fn,
+            tell_fn=tell_fn,
+            popsize=int(popsize),
+            name_hash=int(opt_step.hash),
+            family=FAMILY_POPULATION,
+            transfer_read_fn=read_fn,
+            transfer_write_fn=write_fn,
+            own_ask=spec.own_ask,
+        )
+
     if name in OPTIMISTIX_OPTIMIZERS:
         raise ValueError(
             f"Optimizer {opt_step.optimizer!r} is an optimistix minimiser, "
@@ -595,7 +696,8 @@ def optimizer_parts(
         f"Optimizer {opt_step.optimizer!r} cannot be unpacked into "
         f"parts: it is absent from normalized_optax_normal, "
         f"normalized_optax_from_state, l2co_native_optax, "
-        f"normalized_evosax and l2co_native_evosax. Note these are "
+        f"normalized_evosax, l2co_native_evosax and "
+        f"RANDOM_SEARCH_OPTIMIZERS. Note these are "
         f"narrower than the optimizer registry — an optimizer that "
         f"``optimizer_mapping`` resolves may still be missing here. "
         f"Add it to the matching registry, or hand-build the switching "
