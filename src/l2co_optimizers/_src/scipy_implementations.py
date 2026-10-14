@@ -1,11 +1,11 @@
 """
 scipy.optimize minimisers as plain-run ``UpdateClass`` entries (ADR 0002).
 
-Eight registry entries -- ``"cobyqa"``, ``"cobyla"``, ``"powell"``,
-``"tnc"``, ``"trustkrylov"``, ``"slsqp"``, ``"trustconstr"`` and
-``"lbfgsb"`` -- each run :func:`scipy.optimize.minimize` with the matching
-method. scipy owns the optimization loop, calling the objective itself,
-so none of them can be stepped from a JAX scan:
+Seven registry entries -- ``"cobyqa"``, ``"cobyla"``, ``"powell"``,
+``"tnc"``, ``"trustkrylov"``, ``"slsqp"`` and ``"trustconstr"`` -- each
+run :func:`scipy.optimize.minimize` with the matching method. scipy owns
+the optimization loop, calling the objective itself, so none of them can
+be stepped from a JAX scan:
 :class:`ScipyUpdateClass` overrides :meth:`~UpdateClass.run` to make
 the *whole run* one :func:`jax.pure_callback`. On the host, the
 callback drives scipy against a jitted evaluation of the loss and
@@ -14,8 +14,10 @@ returns fixed-length arrays the run loop turns into a
 
 The decisions behind the wrapping are recorded in
 ``docs/adr/0002-scipy-minimisers-as-whole-run-callback-entries.md``,
-those for SLSQP and trust-constr in ADR 0003, those for L-BFGS-B in
-ADR 0006, and those for COBYLA in ADR 0009; in brief:
+those for SLSQP and trust-constr in ADR 0003, and those for COBYLA in
+ADR 0009. ``"lbfgsb"`` ran here too (ADR 0006) until ADR 0011 stepped
+it one evaluation at a time (:mod:`~l2co_optimizers._src.scipy_stepped`,
+which reuses this module's loss and stopping tolerances). In brief:
 
 * **One iteration is one evaluation.** Every call scipy makes to the
   objective -- the value, or value and gradient together -- is one
@@ -36,14 +38,14 @@ ADR 0006, and those for COBYLA in ADR 0009; in brief:
 * **Stochastic or minibatched losses** get a fresh batch and key on
   every evaluation, drawn exactly as :meth:`UpdateClass.step` draws
   them for any other entry.
-* **Bounds** are passed to scipy for COBYQA, COBYLA, Powell, TNC, SLSQP,
-  trust-constr and L-BFGS-B, which support them, with the starting point
+* **Bounds** are passed to scipy for COBYQA, COBYLA, Powell, TNC, SLSQP
+  and trust-constr, which support them, with the starting point
   clipped into the box (trust-constr's box is ``keep_feasible``).
   trust-krylov does not, so its loss is evaluated at the point projected
   into the box, with the gradient taken through the projection. COBYLA
   takes the box as constraints it may violate on the way, so it too can
   propose a point outside the box, evaluated at its projection. In all
-  eight, the history records the projected point.
+  seven, the history records the projected point.
 * **Exact Hessians** (ADR 0007). With ``hessian="exact"``,
   trust-constr gets ``jax.hessian`` of the loss from
   :meth:`_Driver.hessian`, taken on the sample its point was evaluated
@@ -55,7 +57,7 @@ ADR 0006, and those for COBYLA in ADR 0009; in brief:
   run ends at its current point, as if scipy had terminated.
 * **No stopping criterion and no switching.** A ``stop_fn`` raises,
   since nothing can check it inside one callback, and
-  ``optimizer_parts`` refuses all eight.
+  ``optimizer_parts`` refuses all seven.
 """
 
 #                                                                       Modules
@@ -114,7 +116,6 @@ SCIPY_OPTIMIZERS: frozenset[str] = frozenset(
         "trustkrylov",
         "slsqp",
         "trustconstr",
-        "lbfgsb",
     }
 )
 
@@ -138,8 +139,9 @@ _UNREACHABLE = 2**31 - 1
 #: derivative for linesearch" and trust-constr on its trust radius
 #: falling below ``xtol``. trust-constr's ``xtol`` cannot be zero: its
 #: radius reaches exactly zero and it then iterates forever without
-#: evaluating anything. L-BFGS-B stops on a zero projected gradient, a
-#: zero relative reduction or a failed line search (ADR 0006).
+#: evaluating anything. L-BFGS-B (stepped in ``scipy_stepped``) stops on a
+#: zero projected gradient, a zero relative reduction or a failed line
+#: search (ADR 0006).
 _COBYQA_FINAL_TR_RADIUS = 1e-15
 _COBYLA_TOL = 1e-15
 _POWELL_XTOL = 1e-15
@@ -1354,87 +1356,6 @@ def trustconstr_update(
     )
 
 
-def lbfgsb_update(
-    *,
-    model: PyTree,
-    loss_fn: LossFunction,
-    pass_rng: bool,
-    opt_hash: int,
-    bounded: tuple[float | None, float | None] | None = (None, None),
-    stop_fn: StopFunction | None = None,
-    maxcor: int = 10,
-    maxls: int = 20,
-) -> UpdateClass:
-    """Construct the ``UpdateClass`` behind ``optimizer="lbfgsb"``.
-
-    ``scipy.optimize.minimize(method="L-BFGS-B")``: the limited-memory
-    BFGS code of Byrd, Lu, Nocedal and Zhu, with a Moré--Thuente line
-    search. It handles a box inside the method: a generalized Cauchy
-    point along the projected gradient, then a minimisation over the
-    variables not held at a bound, with a limited-memory model that knows
-    which bounds are active. ``"lbfgs"`` (optax's L-BFGS) instead clips
-    into the box after each step. Parameters other than the two below are
-    those of :func:`cobyqa_update`, without ``initial_tr_radius``; with a
-    box, L-BFGS-B keeps every iterate inside it.
-
-    Parameters
-    ----------
-    maxcor : int, optional
-        Correction pairs the limited-memory Hessian keeps; scipy's
-        default ``10``.
-    maxls : int, optional
-        Line-search evaluations allowed per iteration; scipy's default
-        ``20``.
-
-    Returns
-    -------
-    UpdateClass
-        A :class:`ScipyUpdateClass`.
-
-    Raises
-    ------
-    ValueError
-        If ``stop_fn`` is not ``None``, or ``maxcor`` or ``maxls`` is
-        below one. scipy would raise only once the run had started, and
-        the driver would take that for a failed run.
-    """
-    if maxcor < 1 or maxls < 1:
-        raise ValueError(
-            f"lbfgsb needs maxcor >= 1 and maxls >= 1, got maxcor={maxcor} "
-            f"and maxls={maxls}."
-        )
-
-    def minimize(driver, x0, bounds):
-        return so.minimize(
-            driver.value_and_grad,
-            x0,
-            jac=True,
-            method="L-BFGS-B",
-            bounds=bounds,
-            options=dict(
-                maxcor=maxcor,
-                maxls=maxls,
-                ftol=_LBFGSB_FTOL,
-                gtol=_LBFGSB_GTOL,
-                maxfun=_UNREACHABLE,
-                maxiter=_UNREACHABLE,
-            ),
-        ).x
-
-    return _scipy_update(
-        minimize,
-        name="lbfgsb",
-        family=FAMILY_GRADIENT,
-        with_grad=True,
-        model=model,
-        loss_fn=loss_fn,
-        pass_rng=pass_rng,
-        opt_hash=opt_hash,
-        bounded=bounded,
-        stop_fn=stop_fn,
-    )
-
-
 scipy_mapping = {
     "cobyqa": Partial(cobyqa_update),
     "cobyla": Partial(cobyla_update),
@@ -1443,5 +1364,4 @@ scipy_mapping = {
     "trustkrylov": Partial(trustkrylov_update),
     "slsqp": Partial(slsqp_update),
     "trustconstr": Partial(trustconstr_update),
-    "lbfgsb": Partial(lbfgsb_update),
 }

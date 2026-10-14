@@ -4,11 +4,20 @@ status: proposed
 
 # L-BFGS-B runs on the scipy host-callback driver
 
+> **Amended by [ADR 0011](0011-plain-run-entries-that-can-be-stepped-join-switching-menus.md).**
+> `lbfgsb` no longer runs on the whole-run driver. It is stepped one
+> evaluation at a time (`_src/scipy_stepped.py`), so it can sit in a
+> switching menu and honours a `stop_fn`. Its name, hash, hyperparameters,
+> tolerances, box handling and run rules below are unchanged. The
+> "Rejected: stepping it from the JAX scan" section is reversed: no new
+> kind of parts was needed, because ADR 0011's rule makes `params` the
+> point the method chose to evaluate next.
+
 L-BFGS-B, the limited-memory BFGS code of Byrd, Lu, Nocedal and Zhu that
 scipy ships as `minimize(method="L-BFGS-B")`, joins the registry as
 `lbfgsb` (`_src/scipy_implementations.py`). It is a plain-run entry, like
 the ADR 0002 and ADR 0003 entries: it can never be a sub-optimizer in a
-switching menu or an rl2co action.
+switching menu or an rl2co action (until ADR 0011).
 
 **This reverses one row of ADR 0002's "Not added" table.** ADR 0002 left
 L-BFGS-B out as another implementation of `lbfgs`. On unconstrained

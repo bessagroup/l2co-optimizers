@@ -118,20 +118,65 @@ standard (1, 2, ½, ½). The same code backs the registry entry, which
 replaces optimistix's Nelder–Mead along with ADR 0001's correction to
 it. No databank cell holds `neldermead`, so no data is stranded.
 
-**`lbfgsb`, `slsqp`.** A stepped driver makes one host callback per
-evaluation, carrying scipy's workspace arrays in the scan state. It
-replaces ADR 0002's whole-run driver under the same names and hashes,
-and keeps that driver's rules:
+**`lbfgsb`, `slsqp`.** A stepped driver replaces ADR 0002's whole-run
+driver under the same names and hashes (`_src/scipy_stepped.py`). It
+keeps that driver's rules:
 
 - a run lasts its whole budget;
 - the final point is re-evaluated once scipy stops;
-- a failure ends the run at the best point.
+- a failure ends the run at the best point;
+- a NaN loss is passed to scipy and never becomes the best.
 
-A test against the whole-run driver gates the replacement: the
-trajectories must be bitwise identical. The databank holds 467 cells of
-each on `cutest`. If the test fails, the replacement does not ship. A
-spike on 2026-09-25 matched `minimize` bitwise inside vmap and scan,
-provided scipy is fed the jit-compiled `value_and_grad`.
+How it is built:
+
+- **One transform behind both paths.** Each method is one optax
+  transform whose `params` is the point scipy evaluates next. The
+  registry entry is an ordinary gradient `UpdateClass` around it: the
+  loop evaluates the loss in the scan, at the point projected into the
+  box with the gradient through the projection, as ADR 0002's driver
+  did. `optimizer_parts` returns the same transform as `GradientParts`.
+  So the two paths agree by construction, and `stop_fn` now works.
+- **One host callback per step.** `update` feeds scipy the loss and
+  gradient and runs its routine until it asks for the objective at a new
+  point. A request at the point just evaluated -- L-BFGS-B's
+  re-request after `START`, SLSQP's separate gradient request -- is
+  answered from the values in hand, as scipy's own `ScalarFunction`
+  cache answered it, so billing is unchanged. Under `vmap` the callback
+  runs once per step for the whole batch (`vmap_method="expand_dims"`),
+  looping over it on the host.
+- **scipy's state rides in the carry as `uint32` bits.** The float64
+  iterate and workspaces and the integer save arrays are viewed as
+  `uint32` on the host and concatenated, in both x64 modes. The loop
+  evaluates the float64 iterate cast to its own dtype, as ADR 0002's
+  `jnp.asarray(x)` did. The callback returns only `uint32`: JAX checks a
+  float64 callback output against the x64 setting of the thread the
+  callback runs in, which a scoped `jax.enable_x64` does not reach.
+- **Bounds** reach scipy natively on the registry path, so both entries
+  stay `box` (ADR 0008). The parts path builds the transform unbounded
+  (see "Bounds are deferred").
+
+**The gate has two levels.** Level A replays the evaluations scipy's own
+`minimize` loop makes into the transform, which must ask for exactly
+the points that loop asks for, bitwise. Level B runs the entry end to
+end against the whole-run driver, kept in `tests/whole_run_reference.py`
+as the reference, on sphere, a 1e6-conditioned ellipsoid, Rosenbrock and
+Rastrigin at d = 2, 10 and 40, plus a box, in float32 and in x64. For
+`lbfgsb` both levels are bitwise.
+
+**The run loop's sentinel shifts the history by one evaluation.**
+`UpdateClass.run` runs `n + 1` steps and drops the first, so a
+gradient entry's evaluation at x0 is never recorded or billed. The
+whole-run driver overrode `run` and recorded x0 first. For the same
+budget, the stepped history is therefore the whole-run one shifted by
+one: `stepped[:-1] == whole_run[1:]`, bitwise, plus one more evaluation
+at the end. This was accepted, so that `lbfgsb` follows the convention
+of every other gradient entry. Overriding `run` to record the sentinel
+was rejected: factories never subclass `UpdateClass` to change how a run
+executes. The databank's `lbfgsb` cells no longer match a rerun entry
+for entry and must be regenerated, or read shifted by one.
+
+`_lbfgsb.setulb` and `_slsqplib.slsqp` are private scipy API. Level A
+pins their behaviour at the installed version (scipy 1.18).
 
 ## Handshake: `best` + `reset` for all six stateful entries
 
@@ -187,8 +232,10 @@ the per-entry constraint declarations of ADR 0008.
    `value`; rl2co#57, which makes its two wrappers forward it.
 2. This ADR and `randomsearch`'s parts.
 3. The optimistix trio's parts.
-4. The `neldermead` rewrite.
-5. The stepped `lbfgsb` / `slsqp` driver, behind its bitwise gate.
+4. The stepped `lbfgsb`, then `slsqp` on the same machinery, each behind
+   its two-level gate. These went before the `neldermead` rewrite:
+   nothing in them depends on it.
+5. The `neldermead` rewrite.
 
 Each step removes its own entries from `PLAIN_RUN_OPTIMIZERS` and
 amends the "plain runs only" lines of ADRs 0001, 0002, 0003 and 0006.

@@ -23,6 +23,7 @@ from l2co_optimizers._src.optimistix_implementations import optimistix_mapping
 from l2co_optimizers._src.random_search import random_search_mapping
 from l2co_optimizers._src.rbf_trust_region import rbf_trust_region_mapping
 from l2co_optimizers._src.scipy_implementations import scipy_mapping
+from l2co_optimizers._src.scipy_stepped import scipy_stepped_mapping
 from l2co_optimizers._src.shade import shade_mapping
 from l2co_optimizers._src.turbo import turbo_mapping
 
@@ -68,6 +69,7 @@ optimizers: dict[str, Callable[..., UpdateClass]] = {
         | lbfgs_mapping
         | optimistix_mapping
         | scipy_mapping
+        | scipy_stepped_mapping
         | ipopt_mapping
     ).items()
 }
