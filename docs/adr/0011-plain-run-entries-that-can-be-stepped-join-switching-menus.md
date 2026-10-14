@@ -152,7 +152,9 @@ How it is built:
   float64 callback output against the x64 setting of the thread the
   callback runs in, which a scoped `jax.enable_x64` does not reach.
 - **Bounds** reach scipy natively on the registry path, so both entries
-  stay `box` (ADR 0008). The parts path builds the transform unbounded
+  keep their constraint levels (ADR 0008): `lbfgsb` stays `box` and
+  `slsqp` stays `general`, though no constraint beyond the box reaches
+  it yet (l2co ADR 0020). The parts path builds the transform unbounded
   (see "Bounds are deferred").
 
 **The gate has two levels.** Level A replays the evaluations scipy's own
@@ -161,7 +163,10 @@ the points that loop asks for, bitwise. Level B runs the entry end to
 end against the whole-run driver, kept in `tests/whole_run_reference.py`
 as the reference, on sphere, a 1e6-conditioned ellipsoid, Rosenbrock and
 Rastrigin at d = 2, 10 and 40, plus a box, in float32 and in x64. For
-`lbfgsb` both levels are bitwise.
+both `lbfgsb` and `slsqp`, both levels are bitwise. SLSQP's "positive
+directional derivative" stop can take a million evaluations at
+`ftol = 0` on some problems; Level A checks its idle phase only where it
+stops within the replayed budget.
 
 **The run loop's sentinel shifts the history by one evaluation.**
 `UpdateClass.run` runs `n + 1` steps and drops the first, so a

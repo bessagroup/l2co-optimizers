@@ -1,11 +1,11 @@
 """Unit tests for the whole-run scipy registry entries (ADRs 0002, 0003,
 0009).
 
-``"cobyqa"``, ``"cobyla"``, ``"powell"``, ``"tnc"``, ``"trustkrylov"``,
-``"slsqp"`` and ``"trustconstr"`` hand a whole run to
-:func:`scipy.optimize.minimize` inside one host callback. ``"lbfgsb"``
-did too until ADR 0011 stepped it (``tests/test_scipy_stepped.py``). The
-properties checked:
+``"cobyqa"``, ``"cobyla"``, ``"powell"``, ``"tnc"``, ``"trustkrylov"``
+and ``"trustconstr"`` hand a whole run to :func:`scipy.optimize.minimize`
+inside one host callback. ``"lbfgsb"`` and ``"slsqp"`` did too until
+ADR 0011 stepped them (``tests/test_scipy_stepped.py``). The properties
+checked:
 
 1. the wrapper is transparent -- its evaluations are the ones a direct
    ``scipy.optimize.minimize`` call makes, until scipy stops;
@@ -52,7 +52,6 @@ from l2co_optimizers._src.scipy_implementations import (
     _COBYQA_FINAL_TR_RADIUS,
     _POWELL_FTOL,
     _POWELL_XTOL,
-    _SLSQP_FTOL,
     _TNC_FTOL,
     _TNC_GTOL,
     _TNC_XTOL,
@@ -66,7 +65,6 @@ from l2co_optimizers._src.scipy_implementations import (
     cobyla_update,
     cobyqa_update,
     powell_update,
-    slsqp_update,
     tnc_update,
     trustconstr_update,
     trustkrylov_update,
@@ -87,7 +85,6 @@ NAMES = (
     "powell",
     "tnc",
     "trustkrylov",
-    "slsqp",
     "trustconstr",
 )
 NATIVE_BOUNDS = (
@@ -95,7 +92,6 @@ NATIVE_BOUNDS = (
     "cobyla",
     "powell",
     "tnc",
-    "slsqp",
     "trustconstr",
 )
 DIM = 3
@@ -172,7 +168,6 @@ def _counting(loss_fn, calls):
         ("powell", powell_update),
         ("tnc", tnc_update),
         ("trustkrylov", trustkrylov_update),
-        ("slsqp", slsqp_update),
         ("trustconstr", trustconstr_update),
     ],
 )
@@ -244,14 +239,6 @@ def _direct_scipy(name, loss_fn, x0):
                 maxfev=_UNREACHABLE,
                 maxiter=_UNREACHABLE,
             ),
-        )
-    elif name == "slsqp":
-        so.minimize(
-            fg,
-            x0,
-            jac=True,
-            method="SLSQP",
-            options=dict(ftol=_SLSQP_FTOL, maxiter=_UNREACHABLE),
         )
     elif name == "trustconstr":
         so.minimize(
@@ -808,7 +795,6 @@ def test_batch_run_maps_its_own_run_over_realizations(name):
         ("powell", FAMILY_DERIVATIVE_FREE),
         ("tnc", FAMILY_GRADIENT),
         ("trustkrylov", FAMILY_GRADIENT),
-        ("slsqp", FAMILY_GRADIENT),
         ("trustconstr", FAMILY_GRADIENT),
     ],
 )

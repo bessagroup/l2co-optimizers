@@ -1,43 +1,48 @@
 """
 scipy minimisers stepped one evaluation at a time (ADR 0011).
 
-scipy's L-BFGS-B Fortran routine (``scipy.optimize._lbfgsb.setulb``) uses
-*reverse communication*: it returns to its caller every time it needs
-the objective, with all of its state in the numpy arrays it was handed.
-This module drives it from inside a JAX loop, one evaluation per step,
-so ``"lbfgsb"`` can sit in a switching menu. It replaces ADR 0002's
-whole-run driver (:mod:`~l2co_optimizers._src.scipy_implementations`)
-under the same name and hash.
+scipy's L-BFGS-B Fortran routine (``scipy.optimize._lbfgsb.setulb``) and
+its SLSQP routine (``scipy.optimize._slsqplib.slsqp``) use *reverse
+communication*: they return to their caller every time they need the
+objective, with all of their state in the arrays (and, for SLSQP, the
+dict) they were handed. This module drives them from inside a JAX loop,
+one evaluation per step, so ``"lbfgsb"`` and ``"slsqp"`` can sit in a
+switching menu. They replace ADR 0002's whole-run driver
+(:mod:`~l2co_optimizers._src.scipy_implementations`) under the same
+names and hashes.
 
 One transform backs both construction paths:
 
-* :func:`lbfgsb_transform` is an
+* :func:`lbfgsb_transform` and :func:`slsqp_transform` are
   :class:`optax.GradientTransformationExtraArgs` whose ``params`` is
   always the point scipy evaluates next -- the rule ADR 0011 sets for
   every solver that evaluates the objective itself. ``update`` takes the
   loss (``value=``) and gradient there, hands them to scipy, and runs
   scipy until it asks for the objective at a new point.
-* :func:`lbfgsb_update`, the registry factory, wraps that transform in
-  an ordinary :class:`~l2co_optimizers._src.core.update_class.UpdateClass`
-  whose step evaluates the loss in the scan, as every other gradient
-  entry does. :func:`~l2co_optimizers._src.optimizer_parts.optimizer_parts`
-  hands the same transform to a switching loop as ``GradientParts``.
+* :func:`lbfgsb_update` and :func:`slsqp_update`, the registry
+  factories, wrap that transform in an ordinary
+  :class:`~l2co_optimizers._src.core.update_class.UpdateClass` whose step
+  evaluates the loss in the scan, as every other gradient entry does.
+  :func:`~l2co_optimizers._src.optimizer_parts.optimizer_parts` hands the
+  same transform to a switching loop as ``GradientParts``.
 
 The decisions, in brief:
 
 * **scipy's state rides in the carry as opaque bits.** Every array the
   routine keeps -- the float64 iterate and workspaces, the integer save
-  arrays -- is viewed as ``uint32`` on the host and concatenated
-  (:class:`_Layout`), so the carry holds float64 state whether or not
-  JAX runs in x64. The point the loop evaluates is the float64 iterate
-  cast to the loop's dtype, as ADR 0002's ``jnp.asarray(x)`` cast it.
+  arrays, SLSQP's state dict -- is viewed as ``uint32`` on the host and
+  concatenated (:class:`_Layout`), so the carry holds float64 state
+  whether or not JAX runs in x64. The point the loop evaluates is the
+  float64 iterate cast to the loop's dtype, as ADR 0002's
+  ``jnp.asarray(x)`` cast it.
 * **Each step is one host callback** (:func:`jax.pure_callback`) that
   feeds scipy the loss and gradient and runs it to its next request. A
-  request at the point just evaluated is answered from those values
-  without a new step -- scipy's own ``ScalarFunction`` cache, which
-  ADR 0002's driver relied on. Under ``vmap`` the callback runs once per
-  step for the whole batch (``vmap_method="expand_dims"``), looping over
-  it on the host.
+  request at the point just evaluated -- L-BFGS-B's re-request after
+  ``START``, SLSQP's separate gradient request -- is answered from those
+  values without a new step, as scipy's own ``ScalarFunction`` cache
+  answered it for ADR 0002's driver. Under ``vmap`` the callback runs
+  once per step for the whole batch (``vmap_method="expand_dims"``),
+  looping over it on the host.
 * **ADR 0002's run rules carry over.** A run lasts its whole budget:
   once scipy stops, every step re-evaluates its final point, billed. A
   failure -- scipy raising, or proposing or returning a non-finite
@@ -46,9 +51,9 @@ The decisions, in brief:
   becomes the best.
 * **Bounds** reach scipy natively on the registry path, so every
   iterate stays in the box. The parts path has no bounds channel yet
-  (ADR 0011, "Bounds are deferred"): a switched ``lbfgsb`` is unbounded.
-* ``_lbfgsb.setulb`` is private scipy API. The tests pin its behaviour
-  against ADR 0002's driver bitwise.
+  (ADR 0011, "Bounds are deferred"): a switched entry is unbounded.
+* ``_lbfgsb.setulb`` and ``_slsqplib.slsqp`` are private scipy API. The
+  tests pin their behaviour against ADR 0002's driver bitwise.
 """
 
 #                                                                       Modules
@@ -73,7 +78,7 @@ from jax.flatten_util import ravel_pytree
 from jax.tree_util import Partial
 from jaxtyping import Array, Float, PRNGKeyArray, PyTree, UInt32
 from scipy.linalg.lapack import HAS_ILP64
-from scipy.optimize import _lbfgsb
+from scipy.optimize import _lbfgsb, _slsqplib
 
 # Local
 from l2co_optimizers._src.core.opt_history import OptHistory
@@ -90,6 +95,8 @@ from l2co_optimizers._src.core.update_class import UpdateClass
 from l2co_optimizers._src.scipy_implementations import (
     _LBFGSB_FTOL,
     _LBFGSB_GTOL,
+    _SLSQP_FTOL,
+    _UNREACHABLE,
     _loss_at,
     _np_bounds,
 )
@@ -104,7 +111,7 @@ __status__ = "Stable"
 logger = logging.getLogger(__name__)
 
 #: The registry names this module provides, normalized.
-STEPPED_SCIPY_OPTIMIZERS: frozenset[str] = frozenset({"lbfgsb"})
+STEPPED_SCIPY_OPTIMIZERS: frozenset[str] = frozenset({"lbfgsb", "slsqp"})
 
 #: scipy's integer dtype for the Fortran workspaces.
 _INT = np.int64 if HAS_ILP64 else np.int32
@@ -118,6 +125,26 @@ _IDLE = 1
 #: ``status_messages``).
 _TASK_FG = 3
 _TASK_NEW_X = 1
+
+#: SLSQP's ``mode`` requests: the objective, or its gradient, at ``x``.
+_MODE_F = 1
+_MODE_G = -1
+
+#: What the next evaluation is for (SLSQP's ``pending``): the start, an
+#: objective request or a gradient request.
+_FOR_START = 0
+_FOR_F = 1
+_FOR_G = 2
+
+#: The keys of SLSQP's state dict -- the C struct ``SLSQP_static_vars``
+#: plus ``m``, ``meq`` and ``n`` -- split by type, in packing order.
+_SLSQP_FLOATS = (
+    "acc", "alpha", "f0", "gs", "h1", "h2", "h3", "h4", "t", "t0", "tol",
+)  # fmt: skip
+_SLSQP_INTS = (
+    "exact", "inconsistent", "reset", "iter", "itermax", "line", "m",
+    "meq", "mode", "n",
+)  # fmt: skip
 
 
 #                                                          Packed host state
@@ -169,27 +196,88 @@ class _Layout:
         }
 
 
-@functools.cache
-def _lbfgsb_layout(n: int, m: int) -> _Layout:
-    """The packed state of an ``n``-dimensional L-BFGS-B with memory ``m``.
+def _common_fields(n: int) -> tuple[tuple[str, Any, int], ...]:
+    """The fields every stepped method keeps, for ``n`` dimensions.
 
     ``x`` is scipy's own iterate; ``req`` the point the loop evaluates
     next (``x`` while scipy runs, the final or best point once it idles);
     ``last``, ``f_last`` and ``g_last`` the previous evaluation, which
     answers a request at that same point; ``best_x`` and ``best_loss``
-    the lowest loss so far. The rest are ``setulb``'s workspaces, sized
-    as ``scipy.optimize._lbfgsb_py._minimize_lbfgsb`` sizes them.
+    the lowest loss so far.
+    """
+    f64 = np.float64
+    return (
+        ("x", f64, n),
+        ("req", f64, n),
+        ("last", f64, n),
+        ("f_last", f64, 1),
+        ("g_last", f64, n),
+        ("best_x", f64, n),
+        ("best_loss", f64, 1),
+    )
+
+
+def _start(layout: _Layout, x: np.ndarray) -> dict[str, np.ndarray]:
+    """A fresh host state at ``x``: nothing evaluated, scipy running."""
+    n = x.size
+    state = {name: np.zeros(length, d) for name, d, length in layout.fields}
+    state.update(
+        x=x,
+        req=x,
+        best_x=x,
+        best_loss=np.array([np.inf]),
+        f_last=np.array([np.nan]),
+        g_last=np.full(n, np.nan),
+        last=np.full(n, np.nan),
+        status=np.array([_RUNNING]),
+    )
+    return state
+
+
+def _record(
+    s: dict[str, np.ndarray],
+    f: float,
+    g: np.ndarray,
+    lo: np.ndarray,
+    hi: np.ndarray,
+) -> None:
+    """Note the evaluation at ``req`` as the last one, and maybe the best."""
+    s["last"] = s["req"].copy()
+    s["f_last"][0] = f
+    s["g_last"] = g.copy()
+    # A NaN loss never wins; ties keep the earliest point.
+    if f < s["best_loss"][0]:
+        s["best_loss"][0] = f
+        s["best_x"] = np.clip(s["req"], lo, hi)
+
+
+def _stopped(
+    s: dict[str, np.ndarray], x: np.ndarray
+) -> tuple[np.ndarray, int]:
+    """scipy stopped at ``x``: idle there, or at the best if not finite."""
+    if np.all(np.isfinite(x)):
+        return x.copy(), _IDLE
+    return _failed(s, "scipy returned a non-finite x")
+
+
+def _failed(s: dict[str, np.ndarray], reason: str) -> tuple[np.ndarray, int]:
+    """End the run at the best point evaluated so far."""
+    logger.debug("scipy failed: %s", reason)
+    return s["best_x"].copy(), _IDLE
+
+
+@functools.cache
+def _lbfgsb_layout(n: int, m: int) -> _Layout:
+    """The packed state of an ``n``-dimensional L-BFGS-B with memory ``m``.
+
+    The common fields (:func:`_common_fields`), then ``setulb``'s
+    workspaces, sized as ``scipy.optimize._lbfgsb_py._minimize_lbfgsb``
+    sizes them.
     """
     f64 = np.float64
     return _Layout(
         (
-            ("x", f64, n),
-            ("req", f64, n),
-            ("last", f64, n),
-            ("f_last", f64, 1),
-            ("g_last", f64, n),
-            ("best_x", f64, n),
-            ("best_loss", f64, 1),
+            *_common_fields(n),
             ("wa", f64, 2 * m * n + 5 * n + 11 * m * m + 8 * m),
             ("dsave", f64, 29),
             ("iwa", _INT, 3 * n),
@@ -235,22 +323,10 @@ def _lbfgsb_host_init(
     it; it is the first point evaluated, as ``ScalarFunction`` evaluates
     it before ``setulb`` is first called.
     """
-    n = x0.size
-    lo, hi, *_ = _lbfgsb_bounds(bounded, n)
-    layout = _lbfgsb_layout(n, m)
+    lo, hi, *_ = _lbfgsb_bounds(bounded, x0.size)
+    layout = _lbfgsb_layout(x0.size, m)
     x = np.clip(np.asarray(x0, dtype=np.float64), lo, hi)
-    state = {name: np.zeros(length, d) for name, d, length in layout.fields}
-    state.update(
-        x=x,
-        req=x,
-        best_x=x,
-        best_loss=np.array([np.inf]),
-        f_last=np.array([np.nan]),
-        g_last=np.full(n, np.nan),
-        last=np.full(n, np.nan),
-        status=np.array([_RUNNING], _INT),
-    )
-    return x, layout.pack(state)
+    return x, layout.pack(_start(layout, x))
 
 
 def _lbfgsb_host_update(
@@ -275,22 +351,15 @@ def _lbfgsb_host_update(
 
     f = float(f)
     g = np.asarray(g, dtype=np.float64)
-    s["last"] = s["req"].copy()
-    s["f_last"][0] = f
-    s["g_last"] = g.copy()
-    # A NaN loss never wins; ties keep the earliest point.
-    if f < s["best_loss"][0]:
-        s["best_loss"][0] = f
-        s["best_x"] = np.clip(s["req"], lo, hi)
-
+    _record(s, f, g, lo, hi)
     if s["status"][0] == _RUNNING:
-        s["req"], s["status"][0] = _advance(
+        s["req"], s["status"][0] = _lbfgsb_advance(
             s, f, g, m=m, maxls=maxls, lower=lower, upper=upper, nbd=nbd
         )
     return s["req"], layout.pack(s)
 
 
-def _advance(
+def _lbfgsb_advance(
     s: dict[str, np.ndarray],
     f: float,
     g: np.ndarray,
@@ -328,24 +397,182 @@ def _advance(
             task = int(s["task"][0])
             if task == _TASK_NEW_X:
                 continue
-            if task == _TASK_FG:
-                if not np.all(np.isfinite(x)):
-                    reason = "scipy proposed a non-finite x"
-                    break
-                if np.array_equal(x, s["last"]):
-                    # scipy's ScalarFunction answers this from its cache.
-                    f, g = float(s["f_last"][0]), s["g_last"].copy()
-                    continue
-                return x.copy(), _RUNNING
-            if np.all(np.isfinite(x)):
+            if task != _TASK_FG:
                 logger.debug("scipy stopped: task %s", s["task"])
-                return x.copy(), _IDLE
-            reason = "scipy returned a non-finite x"
-            break
+                return _stopped(s, x)
+            if not np.all(np.isfinite(x)):
+                return _failed(s, "scipy proposed a non-finite x")
+            if not np.array_equal(x, s["last"]):
+                return x.copy(), _RUNNING
+            # scipy's ScalarFunction answers this from its cache.
+            f, g = float(s["f_last"][0]), s["g_last"].copy()
     except Exception as error:  # noqa: BLE001 -- any scipy failure ends it
-        reason = f"scipy raised {error!r}"
-    logger.debug("scipy failed: %s", reason)
-    return s["best_x"].copy(), _IDLE
+        return _failed(s, f"scipy raised {error!r}")
+
+
+#                                                         Host-side SLSQP
+# =============================================================================
+
+
+def _slsqp_buffer_size(n: int) -> int:
+    """SLSQP's float workspace with no constraints but the box.
+
+    ``_minimize_slsqp``'s formula at ``m = meq = 0``, topped up for the
+    missing inequality constraints as it tops it up.
+    """
+    return n * (n + 1) // 2 + 8 * n * n + 35 * n + 28 + 2 * n * (n + 1)
+
+
+@functools.cache
+def _slsqp_layout(n: int) -> _Layout:
+    """The packed state of an ``n``-dimensional SLSQP.
+
+    The common fields (:func:`_common_fields`); ``fx`` and ``g``, the
+    objective and gradient scipy is handed next (a gradient request
+    leaves ``fx`` as it was, as scipy's own loop does); the state dict
+    (``floats``, ``ints``); the multipliers and workspaces, sized as
+    ``scipy.optimize._slsqp_py._minimize_slsqp`` sizes them; and
+    ``pending``, what the next evaluation is for.
+    """
+    f64, i64 = np.float64, np.int64
+    return _Layout(
+        (
+            *_common_fields(n),
+            ("fx", f64, 1),
+            ("g", f64, n),
+            ("floats", f64, len(_SLSQP_FLOATS)),
+            ("mult", f64, 2 * n + 2),
+            ("buffer", f64, _slsqp_buffer_size(n)),
+            ("ints", i64, len(_SLSQP_INTS)),
+            ("indices", _INT, 2 * n + 2),
+            ("status", _INT, 1),
+            ("pending", _INT, 1),
+        )
+    )
+
+
+@functools.cache
+def _slsqp_bounds(
+    bounded: tuple[float | None, float | None], n: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """``(lo, hi, xl, xu)``: the clip box and SLSQP's bound arrays.
+
+    SLSQP marks an unbounded side with NaN, as ``_minimize_slsqp`` does.
+    """
+    lo, hi = _np_bounds(bounded, n)
+    xl = np.where(np.isfinite(lo), lo, np.nan)
+    xu = np.where(np.isfinite(hi), hi, np.nan)
+    return lo, hi, xl, xu
+
+
+def _slsqp_host_init(
+    x0: np.ndarray, *, bounded: tuple[float | None, float | None]
+) -> tuple[np.ndarray, np.ndarray]:
+    """Start one realization: ``(req, packed)``.
+
+    As for L-BFGS-B, the starting point is clipped into the box and is
+    the first point evaluated. The state dict starts as
+    ``_minimize_slsqp`` starts it, with zero tolerances and an
+    unreachable iteration cap.
+    """
+    n = x0.size
+    lo, hi, *_ = _slsqp_bounds(bounded, n)
+    layout = _slsqp_layout(n)
+    x = np.clip(np.asarray(x0, dtype=np.float64), lo, hi)
+    state = _start(layout, x)
+    floats = dict.fromkeys(_SLSQP_FLOATS, 0.0)
+    floats.update(acc=_SLSQP_FTOL, tol=10.0 * _SLSQP_FTOL)
+    ints = dict.fromkeys(_SLSQP_INTS, 0)
+    ints.update(itermax=_UNREACHABLE, n=n)
+    state.update(
+        floats=np.array([floats[k] for k in _SLSQP_FLOATS]),
+        ints=np.array([ints[k] for k in _SLSQP_INTS]),
+        pending=np.array([_FOR_START]),
+    )
+    return x, layout.pack(state)
+
+
+def _slsqp_host_update(
+    packed: np.ndarray,
+    f: np.ndarray,
+    g: np.ndarray,
+    *,
+    bounded: tuple[float | None, float | None],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Hand scipy the evaluation at ``req``: ``(next req, packed)``.
+
+    Runs ``slsqp`` until it asks for the objective or gradient at a
+    point other than the one just evaluated, or stops. Never raises:
+    any failure ends the run at the best point.
+    """
+    n = g.size
+    lo, hi, xl, xu = _slsqp_bounds(bounded, n)
+    layout = _slsqp_layout(n)
+    s = layout.unpack(packed)
+
+    f = float(f)
+    g = np.asarray(g, dtype=np.float64)
+    _record(s, f, g, lo, hi)
+    if s["status"][0] == _RUNNING:
+        pending = s["pending"][0]
+        if pending in (_FOR_START, _FOR_F):
+            s["fx"][0] = f
+        if pending in (_FOR_START, _FOR_G):
+            s["g"] = g.copy()
+        s["req"], s["status"][0] = _slsqp_advance(s, xl=xl, xu=xu)
+    return s["req"], layout.pack(s)
+
+
+def _slsqp_advance(
+    s: dict[str, np.ndarray], *, xl: np.ndarray, xu: np.ndarray
+) -> tuple[np.ndarray, int]:
+    """Run ``slsqp`` to its next request: ``(point, status)``."""
+    n = s["x"].size
+    x = s["x"]
+    state = {
+        k: float(v) for k, v in zip(_SLSQP_FLOATS, s["floats"], strict=True)
+    }
+    state |= {k: int(v) for k, v in zip(_SLSQP_INTS, s["ints"], strict=True)}
+    # No constraints but the box: scipy hands it empty ones.
+    constraints = np.zeros((1, n), order="F")
+    values = np.zeros(1)
+    try:
+        while True:
+            _slsqplib.slsqp(
+                state,
+                float(s["fx"][0]),
+                s["g"],
+                constraints,
+                values,
+                x,
+                s["mult"],
+                xl,
+                xu,
+                s["buffer"],
+                s["indices"],
+            )
+            mode = state["mode"]
+            if mode not in (_MODE_F, _MODE_G):
+                logger.debug("scipy stopped: mode %s", mode)
+                result = _stopped(s, x)
+                break
+            if not np.all(np.isfinite(x)):
+                result = _failed(s, "scipy proposed a non-finite x")
+                break
+            if not np.array_equal(x, s["last"]):
+                s["pending"][0] = _FOR_F if mode == _MODE_F else _FOR_G
+                result = x.copy(), _RUNNING
+                break
+            # scipy's ScalarFunction answers this from its cache.
+            if mode == _MODE_F:
+                s["fx"][0] = s["f_last"][0]
+            else:
+                s["g"] = s["g_last"].copy()
+    except Exception as error:  # noqa: BLE001 -- any scipy failure ends it
+        result = _failed(s, f"scipy raised {error!r}")
+    s["floats"] = np.array([state[k] for k in _SLSQP_FLOATS])
+    s["ints"] = np.array([state[k] for k in _SLSQP_INTS])
+    return result
 
 
 #                                                    Callbacks under vmap
@@ -574,6 +801,34 @@ def lbfgsb_transform(
     )
 
 
+def slsqp_transform(
+    bounded: tuple[float | None, float | None] = (None, None),
+) -> optax.GradientTransformationExtraArgs:
+    """scipy's SLSQP as a stepped optax transform.
+
+    Parameters
+    ----------
+    bounded : tuple[float | None, float | None], optional
+        Box handed to scipy. The parts path leaves it unbounded.
+
+    Returns
+    -------
+    optax.GradientTransformationExtraArgs
+        ``init(params)`` and ``update(grads, state, params, *, value)``,
+        where ``grads`` and ``value`` are the gradient and loss at
+        ``state.x``. ``update`` raises a ``ValueError`` without
+        ``value`` or ``params``.
+    """
+    bounded = (None, None) if bounded is None else tuple(bounded)
+    return _stepped_transform(
+        _HostFns(
+            init=functools.partial(_slsqp_host_init, bounded=bounded),
+            update=functools.partial(_slsqp_host_update, bounded=bounded),
+            packed_size=lambda n: _slsqp_layout(n).size,
+        )
+    )
+
+
 #                                                                 Factories
 # =============================================================================
 
@@ -721,11 +976,77 @@ def lbfgsb_update(
     )
 
 
+def slsqp_update(
+    *,
+    model: PyTree,
+    loss_fn: LossFunction,
+    pass_rng: bool,
+    opt_hash: int,
+    bounded: tuple[float | None, float | None] | None = (None, None),
+    stop_fn: StopFunction | None = None,
+) -> UpdateClass:
+    """Construct the ``UpdateClass`` behind ``optimizer="slsqp"``.
+
+    scipy's SLSQP (``minimize(method="SLSQP")``): Kraft's sequential
+    least-squares quadratic programming, an SQP method with a dense BFGS
+    Hessian and an L1 merit line search. With no constraints beyond a
+    box, each step is a bound-constrained least-squares subproblem. Its
+    dense matrices make the cost per step grow steeply above about a
+    thousand dimensions. It takes no hyperparameters.
+
+    scipy is stepped one evaluation at a time (:func:`slsqp_transform`,
+    ADR 0011), so the entry can sit in a switching menu and honours a
+    ``stop_fn``. Without one, a run lasts its whole budget: once scipy
+    stops, every remaining step re-evaluates its final point. Its
+    ``ftol`` is zero (ADR 0003), so it stops on "positive directional
+    derivative for linesearch".
+
+    Parameters
+    ----------
+    model : PyTree
+        Model whose inexact-array leaves are optimized; the rest is
+        recombined as static structure.
+    loss_fn : LossFunction
+        ``loss_fn(model, **sample)`` -- or ``loss_fn(model, key=key,
+        **sample)`` when ``pass_rng`` -- returning a scalar loss.
+    pass_rng : bool
+        Whether ``loss_fn`` takes a ``key`` keyword (a stochastic loss).
+    opt_hash : int
+        Stable hash stamped into ``OptHistory.update_step``.
+    bounded : tuple[float | None, float | None] or None, optional
+        Box handed to scipy, which keeps every iterate inside it (to a
+        rounding error, which the loss's projection absorbs); the
+        starting point is clipped into it. ``None``, or ``None`` on one
+        side, leaves that side unbounded.
+    stop_fn : StopFunction or None, optional
+        Stopping function; ``None`` never stops.
+
+    Returns
+    -------
+    UpdateClass
+        A gradient ``UpdateClass`` with population size one.
+    """
+    bounded = (None, None) if bounded is None else tuple(bounded)
+    return _stepped_update(
+        "slsqp",
+        slsqp_transform(bounded=bounded),
+        model=model,
+        loss_fn=loss_fn,
+        pass_rng=pass_rng,
+        opt_hash=opt_hash,
+        bounded=bounded,
+        stop_fn=stop_fn,
+    )
+
+
 #: The parts-path transform of each stepped entry, keyed as in the
 #: registry. :func:`~l2co_optimizers._src.optimizer_parts.optimizer_parts`
 #: builds it from the step's hyperparameters, unbounded.
 STEPPED_SCIPY_TRANSFORMS: dict[
     str, Callable[..., optax.GradientTransformationExtraArgs]
-] = {"lbfgsb": lbfgsb_transform}
+] = {"lbfgsb": lbfgsb_transform, "slsqp": slsqp_transform}
 
-scipy_stepped_mapping = {"lbfgsb": Partial(lbfgsb_update)}
+scipy_stepped_mapping = {
+    "lbfgsb": Partial(lbfgsb_update),
+    "slsqp": Partial(slsqp_update),
+}
