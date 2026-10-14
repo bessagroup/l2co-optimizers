@@ -46,9 +46,14 @@ brief:
   the updated simplex (upstream reads them from the pre-update one, so
   they go stale; uncorrected, 5-D Rosenbrock stalls). Neither changes
   what is evaluated or billed.
-* **No switching.** None of the four has an ``optimizer_parts``
-  representation: optimistix solvers evaluate the objective themselves,
-  which fits neither ``GradientParts`` nor ``PopulationParts``.
+* **Switching** (ADR 0011). The three gradient solvers unpack into
+  ``GradientParts`` through :func:`solver_transform`: the same solver,
+  driven as an optax transform whose ``params`` is always the solver's
+  next evaluation point, fed the loop's own loss and gradient through a
+  stub objective (:func:`_told_loss`). The registry ``UpdateClass`` is
+  unchanged; both paths build their solver with the same builder
+  (:data:`GRADIENT_SOLVERS`). Nelder--Mead has no parts representation
+  yet.
 """
 
 #                                                                       Modules
@@ -65,6 +70,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+import optax
 import optimistix as optx
 from jax.tree_util import Partial
 from jaxtyping import Array, Bool, Int, PRNGKeyArray, PyTree, Scalar
@@ -76,6 +82,7 @@ from l2co_optimizers._src.core.popsize import count_parameters
 from l2co_optimizers._src.core.state_transfer import (
     FAMILY_GRADIENT,
     FAMILY_POPULATION,
+    build_transfer_fns,
 )
 from l2co_optimizers._src.core.typing import (
     InputParameters,
@@ -654,6 +661,7 @@ class GradientSolverState(eqx.Module):
 
 
 def _gradient_solver_update(
+    name: str,
     solver: optx.AbstractMinimiser,
     *,
     model: PyTree,
@@ -672,9 +680,14 @@ def _gradient_solver_update(
     evaluation. With ``trial_gradients`` the history records the
     gradient at every evaluated point, from the search state's
     ``grad_eval``; otherwise only on accepted steps, NaN on rejected ones.
+    ``name`` selects the transfer ports, which match the parts path's
+    (ADR 0011).
     """
     if bounded is None:
         bounded = (None, None)
+    transfer_read_fn, transfer_write_fn = build_transfer_fns(
+        name, FAMILY_GRADIENT
+    )
 
     _, static = eqx.partition(model, eqx.is_inexact_array)
     fn = _objective(static, loss_fn, pass_rng, bounded)
@@ -741,7 +754,96 @@ def _gradient_solver_update(
         hash=opt_hash,
         stop_fn=stop_fn,
         family=FAMILY_GRADIENT,
+        transfer_read_fn=transfer_read_fn,
+        transfer_write_fn=transfer_write_fn,
     )
+
+
+def _bfgs_solver(
+    use_inverse: bool = True,
+    linesearch: str = "armijo",
+    decrease_factor: float | None = None,
+    slope: float | None = None,
+    step_init: float | None = None,
+) -> optx.AbstractMinimiser:
+    """Build the solver behind ``"bfgs"``; see :func:`bfgs_update`."""
+    armijo = {
+        "decrease_factor": decrease_factor,
+        "slope": slope,
+        "step_init": step_init,
+    }
+    if linesearch == "wolfe":
+        given = sorted(k for k, v in armijo.items() if v is not None)
+        if given:
+            raise ValueError(
+                f"{given} configure the Armijo line search; "
+                "linesearch='wolfe' takes none of them."
+            )
+        return WolfeBFGS(use_inverse=use_inverse)
+    if linesearch == "armijo":
+        return eqx.tree_at(
+            lambda s: s.search,
+            optx.BFGS(
+                rtol=_UNUSED_TOL, atol=_UNUSED_TOL, use_inverse=use_inverse
+            ),
+            _armijo(
+                0.5 if decrease_factor is None else decrease_factor,
+                0.1 if slope is None else slope,
+                1.0 if step_init is None else step_init,
+            ),
+        )
+    raise ValueError(
+        f"Unknown bfgs linesearch {linesearch!r}; expected 'armijo' "
+        "or 'wolfe'."
+    )
+
+
+def _dfp_solver(
+    use_inverse: bool = True,
+    decrease_factor: float = 0.5,
+    slope: float = 0.1,
+    step_init: float = 1.0,
+) -> optx.AbstractMinimiser:
+    """Build the solver behind ``"dfp"``; see :func:`dfp_update`."""
+    return eqx.tree_at(
+        lambda s: s.search,
+        optx.DFP(rtol=_UNUSED_TOL, atol=_UNUSED_TOL, use_inverse=use_inverse),
+        _armijo(decrease_factor, slope, step_init),
+    )
+
+
+def _nonlinearcg_solver(
+    method: str = "polak_ribiere",
+    decrease_factor: float = 0.5,
+    slope: float = 0.1,
+    step_init: float = 1.0,
+) -> optx.AbstractMinimiser:
+    """Build the solver behind ``"nonlinearcg"``.
+
+    See :func:`nonlinearcg_update`.
+    """
+    if method not in NONLINEAR_CG_METHODS:
+        raise ValueError(
+            f"Unknown nonlinearcg method {method!r}; expected one of "
+            f"{sorted(NONLINEAR_CG_METHODS)}."
+        )
+    return optx.NonlinearCG(
+        rtol=_UNUSED_TOL,
+        atol=_UNUSED_TOL,
+        method=NONLINEAR_CG_METHODS[method],
+        search=_armijo(decrease_factor, slope, step_init),
+    )
+
+
+#: The gradient solvers' builders, keyed as in the registry. The registry
+#: factory and the parts path (:func:`solver_transform`) both build their
+#: solver here, from the same hyperparameters, so the two paths step the
+#: same solver (ADR 0011).
+GRADIENT_SOLVERS: dict[str, Callable[..., optx.AbstractMinimiser]] = {
+    "bfgs": _bfgs_solver,
+    "dfp": _dfp_solver,
+    "nonlinearcg": _nonlinearcg_solver,
+}
 
 
 def bfgs_update(
@@ -814,37 +916,15 @@ def bfgs_update(
         If ``linesearch`` is neither ``"armijo"`` nor ``"wolfe"``, or if
         an Armijo setting is given with ``"wolfe"``.
     """
-    armijo = {
-        "decrease_factor": decrease_factor,
-        "slope": slope,
-        "step_init": step_init,
-    }
-    if linesearch == "wolfe":
-        given = sorted(k for k, v in armijo.items() if v is not None)
-        if given:
-            raise ValueError(
-                f"{given} configure the Armijo line search; "
-                "linesearch='wolfe' takes none of them."
-            )
-        solver = WolfeBFGS(use_inverse=use_inverse)
-    elif linesearch == "armijo":
-        solver = eqx.tree_at(
-            lambda s: s.search,
-            optx.BFGS(
-                rtol=_UNUSED_TOL, atol=_UNUSED_TOL, use_inverse=use_inverse
-            ),
-            _armijo(
-                0.5 if decrease_factor is None else decrease_factor,
-                0.1 if slope is None else slope,
-                1.0 if step_init is None else step_init,
-            ),
-        )
-    else:
-        raise ValueError(
-            f"Unknown bfgs linesearch {linesearch!r}; expected 'armijo' "
-            "or 'wolfe'."
-        )
+    solver = _bfgs_solver(
+        use_inverse=use_inverse,
+        linesearch=linesearch,
+        decrease_factor=decrease_factor,
+        slope=slope,
+        step_init=step_init,
+    )
     return _gradient_solver_update(
+        "bfgs",
         solver,
         model=model,
         loss_fn=loss_fn,
@@ -881,12 +961,14 @@ def dfp_update(
     UpdateClass
         Configured optimizer wrapper.
     """
-    solver = eqx.tree_at(
-        lambda s: s.search,
-        optx.DFP(rtol=_UNUSED_TOL, atol=_UNUSED_TOL, use_inverse=use_inverse),
-        _armijo(decrease_factor, slope, step_init),
+    solver = _dfp_solver(
+        use_inverse=use_inverse,
+        decrease_factor=decrease_factor,
+        slope=slope,
+        step_init=step_init,
     )
     return _gradient_solver_update(
+        "dfp",
         solver,
         model=model,
         loss_fn=loss_fn,
@@ -932,18 +1014,14 @@ def nonlinearcg_update(
     ValueError
         If ``method`` is not one of the four.
     """
-    if method not in NONLINEAR_CG_METHODS:
-        raise ValueError(
-            f"Unknown nonlinearcg method {method!r}; expected one of "
-            f"{sorted(NONLINEAR_CG_METHODS)}."
-        )
-    solver = optx.NonlinearCG(
-        rtol=_UNUSED_TOL,
-        atol=_UNUSED_TOL,
-        method=NONLINEAR_CG_METHODS[method],
-        search=_armijo(decrease_factor, slope, step_init),
+    solver = _nonlinearcg_solver(
+        method=method,
+        decrease_factor=decrease_factor,
+        slope=slope,
+        step_init=step_init,
     )
     return _gradient_solver_update(
+        "nonlinearcg",
         solver,
         model=model,
         loss_fn=loss_fn,
@@ -952,6 +1030,126 @@ def nonlinearcg_update(
         bounded=bounded,
         stop_fn=stop_fn,
     )
+
+
+#                                                  Gradient solvers as parts
+# =============================================================================
+
+
+@jax.custom_jvp
+def _told_loss(y: PyTree, value: Scalar, grad: PyTree) -> Scalar:
+    """A loss the loop already measured at ``y``, as a function of ``y``.
+
+    An optimistix gradient solver evaluates its objective itself, with
+    one ``jax.linearize`` (or, for :class:`WolfeBFGS`, one
+    ``jax.value_and_grad``) at the point it chose. On the parts path the
+    loop has already evaluated that point, so the objective handed to
+    the solver returns the loop's ``value``, and its derivative along
+    any direction ``dy`` is ``<grad, dy>``: both transforms read back
+    exactly what the loop measured, and nothing is evaluated twice.
+
+    Parameters
+    ----------
+    y : PyTree
+        The point; only its tangent is used.
+    value : Scalar
+        The loss the loop measured at ``y``.
+    grad : PyTree
+        The gradient the loop measured at ``y``, structured like ``y``.
+
+    Returns
+    -------
+    Scalar
+        ``value``.
+    """
+    del y, grad
+    return value
+
+
+@_told_loss.defjvp
+def _told_loss_jvp(primals, tangents):
+    """``d value = <grad, dy>``; linear in ``dy``, so it transposes."""
+    _, value, grad = primals
+    dy, dvalue, _ = tangents
+    return value, (dvalue + _tree_dot(grad, dy)).astype(value.dtype)
+
+
+def solver_transform(
+    solver: optx.AbstractMinimiser,
+) -> optax.GradientTransformationExtraArgs:
+    """Drive a gradient-based optimistix solver as an optax transform.
+
+    The parts-path counterpart of :func:`_gradient_solver_update`
+    (ADR 0011). One invariant holds the two halves of a step together:
+    **the** ``params`` **the loop holds is always the point the solver
+    evaluates next** (``solver_state.y_eval``). ``init`` starts the
+    solver at ``params``, which optimistix makes its first ``y_eval``;
+    every ``update`` returns ``y_eval_next - params``. So when the loop
+    evaluates loss and gradient at ``params``, it is measuring exactly
+    the point the solver's next step needs, and :func:`_told_loss` hands
+    both to it. One step is one evaluation, billed 1.
+
+    A switch that moves the iterate breaks the invariant unless the
+    solver is re-initialised at the new point, which is why each of
+    these solvers is tabulated ``reset`` in l2co's handshake table.
+
+    Parameters
+    ----------
+    solver : optimistix.AbstractMinimiser
+        One of :data:`GRADIENT_SOLVERS`' products.
+
+    Returns
+    -------
+    optax.GradientTransformationExtraArgs
+        ``init(params)`` and ``update(grads, state, params, *, value,
+        **extra)``, where ``grads`` and ``value`` are the gradient and
+        loss at ``params``. ``update`` raises a ``ValueError`` without
+        ``value`` or ``params``.
+    """
+
+    def objective(value: Scalar, grad: PyTree) -> Callable:
+        def fn(y: PyTree, args: Any) -> tuple[Scalar, None]:
+            del args
+            return _told_loss(y, value, grad), None
+
+        return fn
+
+    def init_fn(params: PyTree) -> GradientSolverState:
+        dtype = jnp.result_type(*jax.tree.leaves(params))
+        fn = objective(jnp.zeros((), dtype), params)
+        f_struct, aux_struct = jax.eval_shape(fn, params, None)
+        return GradientSolverState(
+            y=params,
+            solver_state=solver.init(
+                fn, params, None, {}, f_struct, aux_struct, frozenset()
+            ),
+        )
+
+    def update_fn(
+        updates: PyTree,
+        state: GradientSolverState,
+        params: PyTree | None = None,
+        *,
+        value: Scalar | None = None,
+        **extra_args: Any,
+    ) -> tuple[PyTree, GradientSolverState]:
+        del extra_args
+        if value is None or params is None:
+            raise ValueError(
+                "An optimistix solver unpacked into parts needs the loss "
+                "at params: call update(grads, state, params, value=loss) "
+                "(ADR 0011). A consumer that does not forward value= "
+                "cannot host it."
+            )
+        dtype = jnp.result_type(*jax.tree.leaves(state.y))
+        fn = objective(jnp.asarray(value, dtype=dtype), updates)
+        y, solver_state, _ = solver.step(
+            fn, state.y, None, {}, state.solver_state, frozenset()
+        )
+        step = jax.tree.map(jnp.subtract, solver_state.y_eval, params)
+        return step, GradientSolverState(y=y, solver_state=solver_state)
+
+    return optax.GradientTransformationExtraArgs(init_fn, update_fn)
 
 
 #                                                                Nelder--Mead
