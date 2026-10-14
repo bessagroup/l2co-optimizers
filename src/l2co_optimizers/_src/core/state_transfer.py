@@ -673,7 +673,8 @@ def read_sigma_solver_step(opt_state: PyTree) -> tuple[Array, Array]:
 def read_sigma_eval_step(opt_state: PyTree) -> tuple[Array, Array]:
     """Read the scale off a stepped solver's last move between evaluations.
 
-    A solver driven one evaluation at a time (``lbfgsb``; ADR 0011)
+    A solver driven one evaluation at a time (``lbfgsb``, ``slsqp``;
+    ADR 0011)
     keeps the point it evaluates next, ``x``, and the point it evaluated
     before, ``x_prev``. Their difference is its latest move, line-search
     trials included, so it is only :data:`CONF_ESTIMATED`. Before the
@@ -1317,6 +1318,7 @@ TRANSFER_OVERRIDES: dict[str, TransferSpec] = {
     # the state; the Fortran workspace has no slot a carried scale
     # survives in, and ``reset`` restarts it anyway.
     "lbfgsb": TransferSpec(FAMILY_GRADIENT, "eval_step", "none"),
+    "slsqp": TransferSpec(FAMILY_GRADIENT, "eval_step", "none"),
     # The mutation GAs. Each adapts against its *own stored* baseline on
     # the next generation -- MR15-GA's 1/5 rule reads ``state.fitness``
     # (``mr15_ga.py:96``), GESMR-GA ranks its std groups by

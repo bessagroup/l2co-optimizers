@@ -1,5 +1,12 @@
 # SLSQP, trust-constr and IPOPT run on the scipy host-callback driver
 
+> **Amended by [ADR 0011](0011-plain-run-entries-that-can-be-stepped-join-switching-menus.md).**
+> `slsqp` no longer runs on the whole-run driver. It is stepped one
+> evaluation at a time (`_src/scipy_stepped.py`), so it can sit in a
+> switching menu and honours a `stop_fn`. Its name, hash, `ftol = 0`,
+> box handling and run rules below are unchanged. `trustconstr` and
+> `ipopt` stay plain-run entries: their solvers own the loop.
+
 Three gradient-based nonlinear-programming (NLP) solvers join the registry
 as plain-run entries:
 

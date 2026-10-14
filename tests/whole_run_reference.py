@@ -1,12 +1,13 @@
-"""ADR 0002's whole-run L-BFGS-B, kept as the reference for the stepped one.
+"""ADR 0002's whole-run L-BFGS-B and SLSQP, the references for the stepped.
 
-Until ADR 0011 stepped it, ``"lbfgsb"`` ran its whole budget as one
-``scipy.optimize.minimize`` call inside one host callback, on the driver
-the other scipy entries still use
+Until ADR 0011 stepped them, ``"lbfgsb"`` and ``"slsqp"`` ran their
+whole budget as one ``scipy.optimize.minimize`` call inside one host
+callback, on the driver the other scipy entries still use
 (:func:`~l2co_optimizers._src.scipy_implementations._scipy_update`). The
-databank's ``lbfgsb`` cells come from that driver. This module rebuilds
-it, exactly as it shipped, so the tests can hold the stepped entry to it
-bitwise. It is a validation reference only and is not shipped.
+databank's ``lbfgsb`` and ``slsqp`` cells come from that driver. This
+module rebuilds both entries, exactly as they shipped, so the tests can
+hold the stepped ones to them bitwise. It is a validation reference
+only and is not shipped.
 """
 
 #                                                                       Modules
@@ -20,6 +21,7 @@ from l2co_optimizers import FAMILY_GRADIENT
 from l2co_optimizers._src.scipy_implementations import (
     _LBFGSB_FTOL,
     _LBFGSB_GTOL,
+    _SLSQP_FTOL,
     _UNREACHABLE,
     _scipy_update,
 )
@@ -32,25 +34,12 @@ __status__ = "Stable"
 # =============================================================================
 
 
-def whole_run_lbfgsb_minimize(maxcor=10, maxls=20, record=None):
-    """The ``minimize`` closure the whole-run ``"lbfgsb"`` handed its driver.
-
-    With ``record`` (a list), every ``(x, f, g)`` scipy is handed is
-    appended to it, in order: the evaluations a stepped L-BFGS-B must
-    replay into the same points.
-    """
+def whole_run_lbfgsb_minimize(maxcor=10, maxls=20):
+    """The ``minimize`` call the whole-run ``"lbfgsb"`` handed its driver."""
 
     def minimize(driver, x0, bounds):
-        fun = driver.value_and_grad
-        if record is not None:
-
-            def fun(x):
-                f, g = driver.value_and_grad(x)
-                record.append((x.copy(), f, g.copy()))
-                return f, g
-
         return so.minimize(
-            fun,
+            driver.value_and_grad,
             x0,
             jac=True,
             method="L-BFGS-B",
@@ -77,12 +66,45 @@ def whole_run_lbfgsb_update(
     bounded=(None, None),
     maxcor=10,
     maxls=20,
-    record=None,
 ):
     """The whole-run ``"lbfgsb"`` ``UpdateClass``, as ADR 0006 built it."""
     return _scipy_update(
-        whole_run_lbfgsb_minimize(maxcor, maxls, record),
+        whole_run_lbfgsb_minimize(maxcor, maxls),
         name="lbfgsb",
+        family=FAMILY_GRADIENT,
+        with_grad=True,
+        model=model,
+        loss_fn=loss_fn,
+        pass_rng=pass_rng,
+        opt_hash=opt_hash,
+        bounded=bounded,
+        stop_fn=None,
+    )
+
+
+def whole_run_slsqp_minimize():
+    """The ``minimize`` call the whole-run ``"slsqp"`` handed its driver."""
+
+    def minimize(driver, x0, bounds):
+        return so.minimize(
+            driver.value_and_grad,
+            x0,
+            jac=True,
+            method="SLSQP",
+            bounds=bounds,
+            options=dict(ftol=_SLSQP_FTOL, maxiter=_UNREACHABLE),
+        ).x
+
+    return minimize
+
+
+def whole_run_slsqp_update(
+    *, model, loss_fn, pass_rng, opt_hash, bounded=(None, None)
+):
+    """The whole-run ``"slsqp"`` ``UpdateClass``, as ADR 0003 built it."""
+    return _scipy_update(
+        whole_run_slsqp_minimize(),
+        name="slsqp",
         family=FAMILY_GRADIENT,
         with_grad=True,
         model=model,
