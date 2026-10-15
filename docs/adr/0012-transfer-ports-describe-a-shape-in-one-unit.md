@@ -84,6 +84,15 @@ shape = D (I + Σᵢ (sᵢ − 1) uᵢuᵢᵀ) D,   with det = 1
 
 The size is 4d plus a few numbers.
 
+**A shape carries the width it pairs with.** A reader returns, with the
+determinant-1 shape, the size it removed: the geometric-mean width of
+the optimizer's search. That is the measurement scale for this shape,
+and the one l2co ADR 0022's distance uses. It is not the RMS width the
+scale readers report. On an ill-conditioned search the two differ by
+orders of magnitude: CMA-ES at `σ = 0.3` with a covariance of
+eigenvalues `1e4 … 1e-4` has a geometric-mean width of 0.3 and an RMS
+width of about 12.
+
 This is CR-FM-NES's own form, extended by one direction. CR-FM-NES
 samples x = mean + σ·D·y with y = z + (√(1+|v|²) − 1)(z·v̂)v̂, so its
 covariance is σ²·D(I + vvᵀ)D. It normalises to det 1
@@ -138,6 +147,14 @@ are the normal case under a switching policy.
 - The Adam-family reader is **bias-corrected**. It reads the count from
   the state (it already looks up `count`/`t`) and closes over β₁ and β₂
   at construction, the same way it closes over the learning rate.
+  Measured against the step just taken, it is exact for adam, adamw,
+  adabelief, amsgrad (whose stored maximum is already corrected),
+  adamax and adamaxw (an infinity norm, divided by directly) and yogi,
+  and within 0.68–1.23x for nadam, nadamw and optimisticadam.
+- **Readers that cannot recover the step report "absent":** LAMB and
+  LARS (a trust ratio), Lion (a sign), RAdam (a rectification), Adan,
+  NovoGrad and SM3. SM3 also loses its writer: its factored accumulators
+  are not one value per coordinate.
 - **An accuracy test** checks every gradient scale reader against the
   step the optimizer actually takes next, from step 1 onwards. It must
   agree within a factor of 1.5. A reader that cannot meet that reports
@@ -162,9 +179,7 @@ example, the matrix forgets at (1 − c1 − c_mu) per generation, so using
 | snes | `lr_std` |
 | xnes | `lr_B` |
 | crfmnes | `lr_B` for `D`, `c1` for `v` |
-| lmmaes | `c_d`, one per direction |
 | iamalgamfull, iamalgamunivariate | `eta_std` |
-| rmes | `c_mu`, `c_c` |
 | simplees | `c_std` |
 | pair-based readers | kept pairs; see below |
 
@@ -174,7 +189,9 @@ l2co counts evidence as updates × rate. A part passes at ≥ 1.
 "none" until someone works out its rate. There is no generic fallback,
 because a default such as 1/d is wrong by orders of magnitude for
 anything that is not CMA-like. pgpe and des showed no rate field in a
-first look, so they stay "none" until checked.
+first look, so they stay "none" until checked. lmmaes (`c_d`, one per
+direction) and rmes (`c_mu`, `c_c`) have rates, but their readers are
+not yet checked against their `_ask`, so they also stay "none" for now.
 
 #### Restart
 
@@ -296,8 +313,8 @@ Readers convert into the unit; writers convert out of it.
 | Optimizer | Reads | Writes |
 |---|---|---|
 | crfmnes | `D`, `v` natively | `D`, plus `v` from the widest direction only |
-| lmmaes | `M`'s directions | both directions |
-| rmes | `P` | the widest direction only: its paths add variance, like `v` |
+| lmmaes | none yet (planned: `M`'s directions) | both directions |
+| rmes | none yet (planned: `P`) | the widest direction only: its paths add variance, like `v` |
 
 **Diagonal slots**
 
@@ -316,8 +333,9 @@ Readers convert into the unit; writers convert out of it.
 | the Adam family, sgd, lion and the other optax transforms | via the record | nothing |
 | nonlinearcg, lbfgsb | via the record | nothing: they restart, with no slot |
 
-RMSProp, Adagrad, Adafactor and SM3 also report no scale, so they
-restart on every switch with news. For Adagrad that is a fix: its
+RMSProp, Adagrad, Adafactor and SM3 also report no scale, as do LAMB,
+LARS, Lion, RAdam, Adan and NovoGrad, so they restart on every switch
+with news. For Adagrad that is a fix: its
 `sum_of_squares` only grows, so after a far move it keeps shrinking its
 steps based on gradients from somewhere else.
 
