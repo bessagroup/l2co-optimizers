@@ -80,6 +80,51 @@ ships here; *when* a switch happens and which population the incoming
 optimizer sees (the **handshake**) is l2co's switching layer (l2co ADR
 0019).
 
+**Shape**:
+How much more curved the landscape is along some directions than
+along others, with the overall size removed: an inverse-curvature
+metric normalised so the geometric mean of its stretches is 1
+(`docs/adr/0012`).
+_Avoid_: curvature (which has a size), covariance, metric,
+preconditioner
+
+**Measurement scale**:
+The scale a shape was measured at: the σ of the optimizer that
+measured it, or, for a shape built from step pairs, the typical length
+of those steps. A label on the shape, never an instruction to the next
+optimizer (l2co ADR 0022).
+_Avoid_: zoom level, resolution, carried scale
+
+**Measurement point**:
+Where a shape was measured: the measuring optimizer's own position (an
+ES's mean, a simplex's centre), or, for a shape built from step pairs,
+the middle of the path those steps cover. Not the best point a switch
+hands over, though the two may coincide.
+
+**Neutral shape**:
+The shape with no preferred direction: every stretch equal to 1.
+
+**Adaptation time**:
+The unit a shape's evidence is counted in: how many updates it has had,
+times the fraction of it each update replaces. One adaptation time is
+roughly the point at which a shape stops reflecting where it started
+(`docs/adr/0012`).
+_Avoid_: generations, when this is meant
+
+**Restart**:
+What an optimizer does when its own state cannot be kept: start afresh
+at a given point, keeping only what that optimizer declares worth
+keeping — for most, nothing; for the trust-region optimizers, the
+points they have already evaluated (`docs/adr/0012`).
+_Avoid_: re-init; "reset" is the handshake table's name for an
+optimizer that restarts on every switch with news
+
+**Curvature record**:
+The last few (step, gradient change) pairs a gradient optimizer keeps
+next to its own state, unseen by its own update, so that an optimizer
+that holds no shape can still report one (`docs/adr/0012`).
+_Avoid_: history (that is `HistoryState`), shadow L-BFGS
+
 **Optimizer parts**:
 A bare optimizer unpacked into the pieces a switching loop drives
 directly, with no handshake decision attached: `GradientParts` (the
