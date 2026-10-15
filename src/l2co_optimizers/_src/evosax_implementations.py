@@ -57,6 +57,7 @@ from l2co_optimizers._src.core.state_transfer import (
     build_transfer_fns,
     transfer_spec_for,
 )
+from l2co_optimizers._src.core.switch_ports import build_switch_ports
 from l2co_optimizers._src.core.typing import (
     AskFunction,
     InitFunction,
@@ -432,6 +433,7 @@ def evosax_distribution_update(
         hyperparameters,
         ravel_fn=optimizer._ravel_solution,
     )
+    switch_ports = build_switch_ports(name, FAMILY_DISTRIBUTION, es_params)
 
     return UpdateClass(
         init_fn=init_fn,
@@ -443,6 +445,7 @@ def evosax_distribution_update(
         ask_fn=evosax_ask_fn(optimizer, es_params, bounded),
         transfer_read_fn=read_fn,
         transfer_write_fn=write_fn,
+        switch_ports=switch_ports,
     )
 
 
@@ -522,6 +525,7 @@ def evosax_population_update(
     read_fn, write_fn = build_transfer_fns(
         name, FAMILY_POPULATION, hyperparameters
     )
+    switch_ports = build_switch_ports(name, FAMILY_POPULATION, es_params)
 
     return UpdateClass(
         init_fn=init_fn,
@@ -544,6 +548,7 @@ def evosax_population_update(
         ),
         transfer_read_fn=read_fn,
         transfer_write_fn=write_fn,
+        switch_ports=switch_ports,
     )
 
 

@@ -738,11 +738,14 @@ class TestRegistryGuards:
                 **MENU.get(name, {}),
             )
             spec = transfer_spec_for(name, update_class.family)
+            # The bound functions are compared by name only, so any ravel
+            # function will do; a distribution writer refuses to build
+            # without one.
             expected_read, expected_write = build_transfer_fns(
                 name,
                 update_class.family,
                 MENU.get(name, {}),
-                ravel_fn=None,
+                ravel_fn=lambda x: x,
             )
             assert update_class.family == spec.family, name
             # Compare by ``__name__``: the builders return closures for

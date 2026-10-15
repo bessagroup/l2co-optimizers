@@ -74,6 +74,7 @@ from l2co_optimizers._src.core.state_transfer import (
     FAMILY_GRADIENT,
     build_transfer_fns,
 )
+from l2co_optimizers._src.core.switch_ports import build_switch_ports
 from l2co_optimizers._src.core.typing import (
     InitFunction,
     InputParameters,
@@ -499,6 +500,7 @@ def lbfgs_update(
     read_fn, write_fn = build_transfer_fns(
         "lbfgs", FAMILY_GRADIENT, hyperparameters
     )
+    switch_ports = build_switch_ports("lbfgs", FAMILY_GRADIENT)
 
     return UpdateClass(
         init_fn=init_fn,
@@ -510,6 +512,7 @@ def lbfgs_update(
         family=FAMILY_GRADIENT,
         transfer_read_fn=read_fn,
         transfer_write_fn=write_fn,
+        switch_ports=switch_ports,
     )
 
 

@@ -1381,18 +1381,42 @@ class TransferSpec(eqx.Module):
         layout. True for every ``distribution`` algorithm and for the
         mutation GAs whose next ``ask`` or ``tell`` reads a baseline
         this handshake just wrote; see ``l2co ADR 0014``.
+    point : str or None
+        Where the optimizer is: a key into
+        :data:`~l2co_optimizers._src.core.switch_ports.POINT_READERS`.
+        ``None`` takes the family's (an ES's ``mean``, a population's
+        centroid, a gradient optimizer's iterate held by the switching
+        loop). See ADR 0012.
+    shape : str
+        Which fields hold the optimizer's own search shape: a key into
+        :data:`~l2co_optimizers._src.core.switch_ports.SHAPE_READERS`, or
+        ``"none"``.
+    shape_rates : tuple[tuple[str, ...], tuple[str, ...]]
+        The evosax parameters whose sum is the fraction of the diagonal,
+        and of a direction, one update replaces. Required with a shape:
+        an optimizer whose rate is unknown declares no shape (ADR 0012).
+    restart_keeps : tuple[str, ...]
+        State fields a restart keeps from before. Empty for almost every
+        optimizer: a restart is its ``init`` at the restart point.
     """
 
     family: str = eqx.field(static=True)
     reader: str = eqx.field(static=True)
     writer: str = eqx.field(static=True)
     own_ask: bool = eqx.field(static=True, default=False)
+    point: str | None = eqx.field(static=True, default=None)
+    shape: str = eqx.field(static=True, default="none")
+    shape_rates: tuple[tuple[str, ...], tuple[str, ...]] = eqx.field(
+        static=True, default=((), ())
+    )
+    restart_keeps: tuple[str, ...] = eqx.field(static=True, default=())
 
 
 #: Gradient optimizers whose step is ``lr * m_hat / (sqrt(v_hat) + eps)``
 #: up to details the scale reader can ignore (decoupled weight decay,
 #: AdaBelief's centred second moment, Yogi's additive ``v`` update,
-#: AMSGrad's running maximum). Filled in from the accuracy test.
+#: AMSGrad's running maximum). Each is held to 1.5x of its real step by
+#: ``tests/test_scale_reader_accuracy.py``.
 ADAM_STYLE: tuple[str, ...] = (
     "adabelief",
     "adam",
@@ -1415,6 +1439,22 @@ UNREADABLE_STEP: tuple[str, ...] = (
     "radam",
     "sm3",
 )
+
+
+def _shaped_es(
+    shape: str,
+    diagonal_rates: tuple[str, ...],
+    direction_rates: tuple[str, ...],
+) -> TransferSpec:
+    """A distribution ES that reads its own shape (ADR 0012)."""
+    return TransferSpec(
+        FAMILY_DISTRIBUTION,
+        "distribution",
+        "distribution",
+        own_ask=True,
+        shape=shape,
+        shape_rates=(diagonal_rates, direction_rates),
+    )
 
 
 _FAMILY_DEFAULTS: dict[str, TransferSpec] = {
@@ -1486,7 +1526,35 @@ TRANSFER_OVERRIDES: dict[str, TransferSpec] = {
         FAMILY_POPULATION, "population", "population_repair", own_ask=True
     ),
     # Holds no persistent search state at all.
-    "randomsearch": TransferSpec(FAMILY_POPULATION, "none", "none"),
+    "randomsearch": TransferSpec(
+        FAMILY_POPULATION, "none", "none", point="none"
+    ),
+    # The trust-region optimizers: their point is the region's centre,
+    # and a restart keeps the archive of points already evaluated -- a
+    # measured value never goes stale, and it is what their own restart
+    # keeps when their region collapses (ADR 0012).
+    **{
+        name: TransferSpec(
+            FAMILY_POPULATION,
+            "population",
+            "population",
+            point="center",
+            restart_keeps=("archive", "archive_fitness", "archive_index"),
+        )
+        for name in ("turbo", "rbftrustregion")
+    },
+    # Distribution ESs with a shape of their own: which fields hold it,
+    # and which of their parameters set how fast it adapts (ADR 0012).
+    # Each reader is checked against the algorithm's ``_ask``.
+    "crfmnes": _shaped_es("crfmnes", ("lr_B",), ("c1",)),
+    "cmaes": _shaped_es("cov", ("c_1", "c_mu"), ("c_1", "c_mu")),
+    "sepcmaes": _shaped_es("cov_diag", ("c_1", "c_mu"), ()),
+    "maes": _shaped_es("mmt", ("c_1", "c_mu"), ("c_1", "c_mu")),
+    "xnes": _shaped_es("btb", ("lr_B",), ("lr_B",)),
+    "snes": _shaped_es("std_diag", ("lr_std_init",), ()),
+    "simplees": _shaped_es("std_diag", ("c_std",), ()),
+    "iamalgamfull": _shaped_es("iamalgam", ("eta_std",), ("eta_std",)),
+    "iamalgamunivariate": _shaped_es("iamalgam_diag", ("eta_std",), ()),
 }
 """Per-optimizer departures from the family default, keyed as in the registry.
 
