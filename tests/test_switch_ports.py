@@ -357,3 +357,49 @@ def test_shape_is_a_valid_switch_output():
         0,
     )
     assert out.diagonal.shape == (DIM,)
+
+
+#: A deliberately stretched state for each shape kind, so forgetting the
+#: shape is visible.
+_STRETCH = jnp.array([9.0, 4.0, 1.0, 1.0, 0.25, 0.1])
+_DISTORTED = {
+    "cmaes": {"C": jnp.diag(_STRETCH)},
+    "sepcmaes": {"C": _STRETCH},
+    "maes": {"M": jnp.diag(jnp.sqrt(_STRETCH))},
+    "xnes": {"B": jnp.diag(jnp.sqrt(_STRETCH))},
+    "snes": {"std": 0.5 * jnp.sqrt(_STRETCH)},
+    "simplees": {"std": 0.5 * jnp.sqrt(_STRETCH)},
+    "iamalgamfull": {"C": jnp.diag(_STRETCH)},
+    "iamalgamunivariate": {"C": _STRETCH},
+    "crfmnes": {"D": jnp.sqrt(_STRETCH)},
+}
+
+
+class TestNeutralize:
+    @pytest.mark.parametrize("name", sorted(SHAPED))
+    def test_declared_with_the_shape_reader(self, problem, name):
+        ports = _built(problem, name)[0].switch_ports
+        assert ports.neutralize is not None, name
+
+    def test_absent_without_a_shape(self, problem):
+        assert _built(problem, "mr15ga")[0].switch_ports.neutralize is None
+
+    @pytest.mark.parametrize("name", sorted(SHAPED))
+    def test_forgets_the_shape_keeps_the_width(self, name):
+        old, _ = _es_state(name, **_DISTORTED[name])
+        fresh, _ = _es_state(name)
+        ports = _ports(name)
+        before = ports.read_shape(old)
+        after = ports.read_shape(ports.neutralize(old, fresh))
+        np.testing.assert_allclose(
+            float(after.scale), float(before.scale), rtol=1e-5
+        )
+        # The stretched diagonal is gone: every width is the same. (Not
+        # necessarily 1: CR-FM-NES's starting v is random, and the
+        # normalisation spreads over its stretch.)
+        np.testing.assert_allclose(
+            np.asarray(after.diagonal / after.diagonal[0]),
+            np.ones(DIM),
+            rtol=1e-5,
+        )
+        assert float(jnp.max(before.diagonal) / jnp.min(before.diagonal)) > 2

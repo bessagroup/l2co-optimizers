@@ -308,6 +308,67 @@ SHAPE_READERS: dict[str, Callable[[PyTree], Shape]] = {
 """Shape readers by kind, each verified against the algorithm's ``_ask``."""
 
 
+def _scale_std(state: PyTree, factor: Array) -> PyTree:
+    return state.replace(std=jnp.asarray(state.std, dtype=float) * factor)
+
+
+def _make_neutralize(kind: str, fields: tuple[str, ...]) -> Callable:
+    """``neutralize(old_state, fresh_state)`` for a shape of ``kind``.
+
+    Takes the shape fields from the optimizer's own fresh ``init`` and
+    rescales its ``std`` so the geometric-mean width stays the old
+    state's. "Neutral" therefore means the optimizer's own starting
+    shape at its current width, not a shape it never starts from:
+    CR-FM-NES, for one, starts from a random ``v`` rather than zero, and
+    its update divides by ``|v|``.
+    """
+    read = SHAPE_READERS[kind]
+
+    def neutralize(old_state: PyTree, fresh_state: PyTree) -> PyTree:
+        """Forget the shape, keep the width (l2co ADR 0022, arm 3a).
+
+        Parameters
+        ----------
+        old_state : PyTree
+            The optimizer's state, with the shape to forget.
+        fresh_state : PyTree
+            Its own ``init``, for the starting shape fields.
+
+        Returns
+        -------
+        PyTree
+            ``old_state`` with its starting shape, at its old width.
+        """
+        width = read(old_state).scale
+        state = old_state.replace(
+            **{name: getattr(fresh_state, name) for name in fields}
+        )
+        if kind in ("iamalgam", "iamalgam_diag"):
+            # The width is std plus the sampled part, not std times it:
+            # put all of it in std and none in the shape.
+            state = state.replace(
+                std=jnp.broadcast_to(width, jnp.shape(state.std)),
+                C=jnp.zeros_like(state.C),
+            )
+            return state
+        return _scale_std(state, width / read(state).scale)
+
+    return neutralize
+
+
+#: The fields that hold each kind of shape, as ``init`` sets them.
+_SHAPE_FIELDS: dict[str, tuple[str, ...]] = {
+    "crfmnes": ("D", "v"),
+    "cov": ("C", "B", "D"),
+    "cov_diag": ("C", "D"),
+    "mmt": ("M",),
+    "btb": ("B",),
+    "std_diag": ("std",),
+    "iamalgam": ("C",),
+    "iamalgam_diag": ("C",),
+}
+
+
 def _point_mean(opt_state: PyTree) -> Array:
     return jnp.ravel(jnp.asarray(opt_state.mean, dtype=float))
 
@@ -393,6 +454,12 @@ class SwitchPorts(eqx.Module):
         optimizer declares worth keeping across a restart.
     restart_keeps : tuple[str, ...]
         The state fields :attr:`restart` keeps.
+    neutralize : Callable or None
+        ``neutralize(old_state, fresh_state) -> state``: forget the
+        learned shape, keep the width. Takes the shape fields from the
+        optimizer's fresh ``init`` and rescales its scale so the
+        geometric-mean width is unchanged. Set exactly when
+        :attr:`read_shape` is.
     """
 
     read_point: Callable | None = eqx.field(static=True)
@@ -400,6 +467,7 @@ class SwitchPorts(eqx.Module):
     shape_rates: tuple[float, float] | None = eqx.field(static=True)
     restart: Callable = eqx.field(static=True)
     restart_keeps: tuple[str, ...] = eqx.field(static=True, default=())
+    neutralize: Callable | None = eqx.field(static=True, default=None)
 
 
 def build_switch_ports(
@@ -431,7 +499,7 @@ def build_switch_ports(
     spec = transfer_spec_for(name, family)
     point = spec.point if spec.point is not None else _DEFAULT_POINT[family]
 
-    read_shape, rates = None, None
+    read_shape, rates, neutralize = None, None, None
     if spec.shape != "none":
         if es_params is None:
             raise ValueError(
@@ -444,6 +512,7 @@ def build_switch_ports(
             float(sum(getattr(es_params, f) for f in direction_fields)),
         )
         read_shape = SHAPE_READERS[spec.shape]
+        neutralize = _make_neutralize(spec.shape, _SHAPE_FIELDS[spec.shape])
 
     return SwitchPorts(
         read_point=POINT_READERS[point],
@@ -451,4 +520,5 @@ def build_switch_ports(
         shape_rates=rates,
         restart=_make_restart(spec.restart_keeps),
         restart_keeps=spec.restart_keeps,
+        neutralize=neutralize,
     )
