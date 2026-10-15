@@ -74,7 +74,9 @@ from l2co_optimizers import (
 )
 from l2co_optimizers import optimizers as REGISTRY
 from l2co_optimizers._src.core.state_transfer import (
+    ADAM_STYLE,
     TRANSFER_OVERRIDES,
+    UNREADABLE_STEP,
     transfer_spec_for,
 )
 
@@ -102,6 +104,18 @@ MENU: dict[str, dict] = {
     "crfmnes": {},
     "sepcmaes": {},
     "adan": {"learning_rate": 1e-2},
+    # Gradient optimizers whose overrides only change the scale reader;
+    # every one needs a learning rate to build.
+    **{
+        name: {"learning_rate": 1e-2}
+        for name in (
+            *ADAM_STYLE,
+            *UNREADABLE_STEP,
+            "adamax",
+            "adamaxw",
+        )
+        if name != "adan"
+    },
     "pso": {},
     "mr15ga": {},
     "samrga": {},
@@ -212,7 +226,9 @@ class TestRoundTrip:
         ("name", "transform", "hp"),
         [
             ("adam", optax.adam(1e-2), {"learning_rate": 1e-2}),
-            ("adan", optax.adan(1e-2), {"learning_rate": 1e-2}),
+            ("adamw", optax.adamw(1e-2), {"learning_rate": 1e-2}),
+            ("amsgrad", optax.amsgrad(1e-2), {"learning_rate": 1e-2}),
+            ("adamax", optax.adamax(1e-2), {"learning_rate": 1e-2}),
             ("sgd", optax.sgd(1e-2, momentum=0.9), {"learning_rate": 1e-2}),
             ("rprop", optax.rprop(1e-3), {"learning_rate": 1e-3}),
         ],
