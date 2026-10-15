@@ -441,7 +441,11 @@ def make_read_sigma_gradient(learning_rate: float) -> Callable:
     rate nor the bias-correction coefficients are recoverable from the
     state -- ``scale_by_learning_rate`` carries an ``EmptyState`` -- so
     the rate is closed over here and bias correction is skipped, which is
-    why the result is only :data:`CONF_ESTIMATED`.
+    why the result is only :data:`CONF_ESTIMATED`. The Adam-style
+    optimizers (:data:`ADAM_STYLE`, AdaMax) use the bias-corrected
+    :func:`make_read_sigma_adam` instead; this generic reader is what is
+    left for the rest, and ``tests/test_scale_reader_accuracy.py`` holds
+    every gradient reader to 1.5x of the step actually taken.
 
     Parameters
     ----------
@@ -478,6 +482,83 @@ def make_read_sigma_gradient(learning_rate: float) -> Callable:
             # RMS is zero and means nothing.
             conf = jnp.where(jnp.asarray(count) > 0, conf, CONF_ABSENT)
         return sigma, conf
+
+    return read
+
+
+def make_read_sigma_adam(
+    learning_rate: float,
+    b1: float = 0.9,
+    b2: float = 0.999,
+    eps: float = 1e-8,
+    infinity_norm: bool = False,
+) -> Callable:
+    """Build a bias-corrected reader for an Adam-style optimizer.
+
+    The scale is the RMS of the step the optimizer takes,
+    ``learning_rate * m_hat / (sqrt(v_hat) + eps)``, with both moments
+    bias-corrected by the update count: ``m_hat = m / (1 - b1**t)``,
+    ``v_hat = v / (1 - b2**t)``. :func:`make_read_sigma_gradient` skips
+    the correction, which overstates the step by
+    ``(1 - b1**t) / sqrt(1 - b2**t)`` -- 3.2x at ``t = 1``, 6.5x at
+    ``t = 10``, still 1.26x at ``t = 1000`` with Adam's defaults. That
+    did not matter while the scale only fed the scale write. It matters
+    once the scale decides whether an optimizer's own state still holds
+    at a switch's destination (l2co ADR 0022), and short visits are the
+    common case there.
+
+    The count is in the state; ``b1``, ``b2`` and ``eps`` are not, so they
+    are closed over like the learning rate. AMSGrad keeps the running
+    maximum of the *already bias-corrected* ``v`` as ``nu_max``, which is
+    what its step divides by, so that field is preferred when present and
+    is not corrected a second time.
+
+    Parameters
+    ----------
+    learning_rate : float
+        The rate the optimizer was constructed with.
+    b1, b2 : float, optional
+        The moment decay rates it was constructed with. Default to the
+        optax defaults shared by every optimizer this reader serves.
+    eps : float, optional
+        The denominator's additive constant.
+    infinity_norm : bool, optional
+        AdaMax: the second moment is an exponentially weighted infinity
+        norm, divided by directly and not bias-corrected.
+
+    Returns
+    -------
+    Callable
+        ``reader(opt_state) -> (sigma, conf_sigma)``.
+    """
+
+    def read(opt_state: PyTree) -> tuple[Array, Array]:
+        momentum, _ = _get_first(opt_state, _MOMENTUM_NAMES)
+        second, second_name = _get_first(
+            opt_state, ("nu_max", *_SECOND_MOMENT_NAMES)
+        )
+        count, _ = _get_first(opt_state, _COUNT_NAMES)
+        if momentum is None or second is None or count is None:
+            return jnp.asarray(0.0), jnp.asarray(CONF_ABSENT)
+
+        t = jnp.asarray(count, dtype=float)
+
+        def step(m, v):
+            m_hat = jnp.asarray(m, dtype=float) / (1.0 - b1**t)
+            v = jnp.asarray(v, dtype=float)
+            if infinity_norm:
+                return m_hat / (v + eps)
+            if second_name != "nu_max":
+                v = v / (1.0 - b2**t)
+            return m_hat / (jnp.sqrt(v) + eps)
+
+        sigma = float(learning_rate) * _rms(
+            jax.tree.map(step, momentum, second)
+        )
+        sigma, conf = _finite_or_absent(sigma, CONF_ESTIMATED)
+        # Before the first update both moments are zeros and the
+        # correction divides by zero: absence, not a scale.
+        return sigma, jnp.where(t > 0, conf, CONF_ABSENT)
 
     return read
 
@@ -1084,7 +1165,11 @@ def make_write_population(repair_baseline: bool) -> Callable:
     return write
 
 
-def make_write_gradient(learning_rate: float) -> Callable:
+def make_write_gradient(
+    learning_rate: float,
+    read_fn: Callable | None = None,
+    infinity_norm: bool = False,
+) -> Callable:
     """Build the writer for an optax second-moment optimizer.
 
     The per-coordinate step is ``learning_rate * mu / (sqrt(nu) + eps)``,
@@ -1098,12 +1183,23 @@ def make_write_gradient(learning_rate: float) -> Callable:
     ----------
     learning_rate : float
         The rate the optimizer was constructed with.
+    read_fn : Callable or None, optional
+        The optimizer's own scale reader. Given for the Adam-style
+        optimizers, whose reader is bias-corrected
+        (:func:`make_read_sigma_adam`): the current step is then measured
+        the same way it will be read back, so a write round-trips.
+        ``None`` measures it uncorrected, as before.
+    infinity_norm : bool, optional
+        AdaMax: the step divides by the second moment itself rather than
+        its square root, so moving the step by ``1/k`` scales it by ``k``
+        rather than ``k²``.
 
     Returns
     -------
     Callable
         ``writer(bundle, opt_state) -> opt_state``.
     """
+    power = 1.0 if infinity_norm else 2.0
 
     def write(bundle: TransferBundle, opt_state: PyTree) -> PyTree:
         momentum, momentum_name = _get_first(opt_state, _MOMENTUM_NAMES)
@@ -1127,6 +1223,8 @@ def make_write_gradient(learning_rate: float) -> Callable:
             # stored, but you can still rescale the preconditioner.
             step = 1.0 / (jnp.sqrt(second) + 1e-8)
         rms_own = float(learning_rate) * _rms(step)
+        if read_fn is not None:
+            rms_own, _ = read_fn(opt_state)
 
         use = _usable_sigma(bundle)
         use = use & jnp.isfinite(rms_own) & (rms_own > 0.0)
@@ -1140,14 +1238,16 @@ def make_write_gradient(learning_rate: float) -> Callable:
         if second is not None:
             # Scaling the second moment by k² scales the step by 1/k,
             # leaving the relative per-coordinate preconditioner intact.
-            return optax.tree.set(
-                opt_state,
-                **{
-                    second_name: _blend(
-                        use, second * jnp.square(ratio), second
-                    )
-                },
-            )
+            # AMSGrad divides by its running maximum ``nu_max``, which is
+            # scaled with it so the maximum does not undo the write.
+            fields = {second_name: _blend(use, second * ratio**power, second)}
+            second_max = optax.tree.get(opt_state, "nu_max")
+            if second_max is not None:
+                second_max = jnp.asarray(second_max, dtype=float)
+                fields["nu_max"] = _blend(
+                    use, second_max * ratio**power, second_max
+                )
+            return optax.tree.set(opt_state, **fields)
         # Momentum-only (SGD with momentum, LARS): no preconditioner to
         # rescale, so the step scale lives in the trace itself.
         return optax.tree.set(
@@ -1281,12 +1381,80 @@ class TransferSpec(eqx.Module):
         layout. True for every ``distribution`` algorithm and for the
         mutation GAs whose next ``ask`` or ``tell`` reads a baseline
         this handshake just wrote; see ``l2co ADR 0014``.
+    point : str or None
+        Where the optimizer is: a key into
+        :data:`~l2co_optimizers._src.core.switch_ports.POINT_READERS`.
+        ``None`` takes the family's (an ES's ``mean``, a population's
+        centroid, a gradient optimizer's iterate held by the switching
+        loop). See ADR 0012.
+    shape : str
+        Which fields hold the optimizer's own search shape: a key into
+        :data:`~l2co_optimizers._src.core.switch_ports.SHAPE_READERS`, or
+        ``"none"``.
+    shape_rates : tuple[tuple[str, ...], tuple[str, ...]]
+        The evosax parameters whose sum is the fraction of the diagonal,
+        and of a direction, one update replaces. Required with a shape:
+        an optimizer whose rate is unknown declares no shape (ADR 0012).
+    restart_keeps : tuple[str, ...]
+        State fields a restart keeps from before. Empty for almost every
+        optimizer: a restart is its ``init`` at the restart point.
     """
 
     family: str = eqx.field(static=True)
     reader: str = eqx.field(static=True)
     writer: str = eqx.field(static=True)
     own_ask: bool = eqx.field(static=True, default=False)
+    point: str | None = eqx.field(static=True, default=None)
+    shape: str = eqx.field(static=True, default="none")
+    shape_rates: tuple[tuple[str, ...], tuple[str, ...]] = eqx.field(
+        static=True, default=((), ())
+    )
+    restart_keeps: tuple[str, ...] = eqx.field(static=True, default=())
+
+
+#: Gradient optimizers whose step is ``lr * m_hat / (sqrt(v_hat) + eps)``
+#: up to details the scale reader can ignore (decoupled weight decay,
+#: AdaBelief's centred second moment, Yogi's additive ``v`` update,
+#: AMSGrad's running maximum). Each is held to 1.5x of its real step by
+#: ``tests/test_scale_reader_accuracy.py``.
+ADAM_STYLE: tuple[str, ...] = (
+    "adabelief",
+    "adam",
+    "adamw",
+    "amsgrad",
+    "nadam",
+    "nadamw",
+    "optimisticadam",
+    "yogi",
+)
+
+#: Gradient optimizers whose step no scale reader recovers from the
+#: state, as measured against the step actually taken.
+UNREADABLE_STEP: tuple[str, ...] = (
+    "adan",
+    "lamb",
+    "lars",
+    "lion",
+    "novograd",
+    "radam",
+    "sm3",
+)
+
+
+def _shaped_es(
+    shape: str,
+    diagonal_rates: tuple[str, ...],
+    direction_rates: tuple[str, ...],
+) -> TransferSpec:
+    """A distribution ES that reads its own shape (ADR 0012)."""
+    return TransferSpec(
+        FAMILY_DISTRIBUTION,
+        "distribution",
+        "distribution",
+        own_ask=True,
+        shape=shape,
+        shape_rates=(diagonal_rates, direction_rates),
+    )
 
 
 _FAMILY_DEFAULTS: dict[str, TransferSpec] = {
@@ -1303,6 +1471,30 @@ TRANSFER_OVERRIDES: dict[str, TransferSpec] = {
     # Reads its own step length exactly; receives one exactly. The only
     # optimizer whose scale field is natively a length.
     "rprop": TransferSpec(FAMILY_GRADIENT, "rprop", "rprop"),
+    # Adam-style moments, read bias-corrected so the scale matches the
+    # step actually taken (``make_read_sigma_adam``). Each is held to
+    # 1.5x of its real step by ``tests/test_scale_reader_accuracy.py``.
+    **{
+        name: TransferSpec(FAMILY_GRADIENT, "adam", "adam")
+        for name in ADAM_STYLE
+    },
+    "adamax": TransferSpec(FAMILY_GRADIENT, "adamax", "adamax"),
+    "adamaxw": TransferSpec(FAMILY_GRADIENT, "adamax", "adamax"),
+    # Optimizers whose step no reader can recover from their moments --
+    # a trust ratio (LAMB, LARS), a sign (Lion), a rectification (RAdam),
+    # their own update rules (Adan, NovoGrad, SM3). They report no scale
+    # rather than a wrong one, so a switch that moves them always
+    # restarts them (l2co ADR 0022). Their writers are unchanged.
+    **{
+        name: TransferSpec(FAMILY_GRADIENT, "none", "gradient")
+        for name in UNREADABLE_STEP
+        if name != "sm3"
+    },
+    # SM3 keeps its second moment as factored accumulators (one cover per
+    # axis), not one value per coordinate, so the generic writer cannot
+    # rescale it either: on a matrix-shaped parameter the accumulators
+    # do not even share a shape.
+    "sm3": TransferSpec(FAMILY_GRADIENT, "none", "none"),
     # Its last accepted step is in the state; nothing survives a write.
     "lbfgs": TransferSpec(FAMILY_GRADIENT, "lbfgs", "none"),
     # The solvers that evaluate the objective themselves (ADR 0011). The
@@ -1334,7 +1526,35 @@ TRANSFER_OVERRIDES: dict[str, TransferSpec] = {
         FAMILY_POPULATION, "population", "population_repair", own_ask=True
     ),
     # Holds no persistent search state at all.
-    "randomsearch": TransferSpec(FAMILY_POPULATION, "none", "none"),
+    "randomsearch": TransferSpec(
+        FAMILY_POPULATION, "none", "none", point="none"
+    ),
+    # The trust-region optimizers: their point is the region's centre,
+    # and a restart keeps the archive of points already evaluated -- a
+    # measured value never goes stale, and it is what their own restart
+    # keeps when their region collapses (ADR 0012).
+    **{
+        name: TransferSpec(
+            FAMILY_POPULATION,
+            "population",
+            "population",
+            point="center",
+            restart_keeps=("archive", "archive_fitness", "archive_index"),
+        )
+        for name in ("turbo", "rbftrustregion")
+    },
+    # Distribution ESs with a shape of their own: which fields hold it,
+    # and which of their parameters set how fast it adapts (ADR 0012).
+    # Each reader is checked against the algorithm's ``_ask``.
+    "crfmnes": _shaped_es("crfmnes", ("lr_B",), ("c1",)),
+    "cmaes": _shaped_es("cov", ("c_1", "c_mu"), ("c_1", "c_mu")),
+    "sepcmaes": _shaped_es("cov_diag", ("c_1", "c_mu"), ()),
+    "maes": _shaped_es("mmt", ("c_1", "c_mu"), ("c_1", "c_mu")),
+    "xnes": _shaped_es("btb", ("lr_B",), ("lr_B",)),
+    "snes": _shaped_es("std_diag", ("lr_std_init",), ()),
+    "simplees": _shaped_es("std_diag", ("c_std",), ()),
+    "iamalgamfull": _shaped_es("iamalgam", ("eta_std",), ("eta_std",)),
+    "iamalgamunivariate": _shaped_es("iamalgam_diag", ("eta_std",), ()),
 }
 """Per-optimizer departures from the family default, keyed as in the registry.
 
@@ -1435,6 +1655,19 @@ def build_transfer_fns(
         "distribution": read_sigma_distribution,
         "population": read_sigma_population,
         "gradient": make_read_sigma_gradient(learning_rate),
+        "adam": make_read_sigma_adam(
+            learning_rate,
+            hyperparameters.get("b1", 0.9),
+            hyperparameters.get("b2", 0.999),
+            hyperparameters.get("eps", 1e-8),
+        ),
+        "adamax": make_read_sigma_adam(
+            learning_rate,
+            hyperparameters.get("b1", 0.9),
+            hyperparameters.get("b2", 0.999),
+            hyperparameters.get("eps", 1e-8),
+            infinity_norm=True,
+        ),
         "rprop": read_sigma_rprop,
         "lbfgs": make_read_sigma_lbfgs(
             hyperparameters.get("scale_init_precond", True),
@@ -1461,6 +1694,10 @@ def build_transfer_fns(
         "population": make_write_population(repair_baseline=False),
         "population_repair": make_write_population(repair_baseline=True),
         "gradient": make_write_gradient(learning_rate),
+        "adam": make_write_gradient(learning_rate, read_fn=readers["adam"]),
+        "adamax": make_write_gradient(
+            learning_rate, read_fn=readers["adamax"], infinity_norm=True
+        ),
         "rprop": make_write_rprop(
             hyperparameters.get("min_step_size", 1e-6),
             hyperparameters.get("max_step_size", 50.0),

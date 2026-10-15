@@ -77,6 +77,11 @@ def test_all_symbols_are_importable():
         ("GradientParts", "l2co_optimizers._src.optimizer_parts"),
         ("PopulationParts", "l2co_optimizers._src.optimizer_parts"),
         ("step_fevals", "l2co_optimizers._src.optax_implementations"),
+        # What every switchable optimizer declares to a switching loop
+        # (ADR 0012)
+        ("Shape", "l2co_optimizers._src.core.switch_ports"),
+        ("SwitchPorts", "l2co_optimizers._src.core.switch_ports"),
+        ("build_switch_ports", "l2co_optimizers._src.core.switch_ports"),
         # The family held only by plain-run entries (ADR 0002)
         (
             "FAMILY_DERIVATIVE_FREE",

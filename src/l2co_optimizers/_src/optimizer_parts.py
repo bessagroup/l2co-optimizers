@@ -48,6 +48,10 @@ from l2co_optimizers._src.core.state_transfer import (
     build_transfer_fns,
     transfer_spec_for,
 )
+from l2co_optimizers._src.core.switch_ports import (
+    SwitchPorts,
+    build_switch_ports,
+)
 from l2co_optimizers._src.core.typing import LossFunction
 from l2co_optimizers._src.core.utils import normalize_key
 from l2co_optimizers._src.evosax_implementations import normalized_evosax
@@ -190,6 +194,10 @@ class GradientParts(eqx.Module):
         ``transfer_write_fn(bundle, opt_state) -> opt_state``.
     popsize : int
         Always ``1``.
+    switch_ports : SwitchPorts or None
+        Built by
+        :func:`~l2co_optimizers._src.core.switch_ports.build_switch_ports`,
+        exactly as the ``UpdateClass`` factory does (ADR 0012).
     """
 
     transform: optax.GradientTransformation = eqx.field(static=True)
@@ -199,6 +207,7 @@ class GradientParts(eqx.Module):
     transfer_read_fn: Callable = eqx.field(static=True)
     transfer_write_fn: Callable = eqx.field(static=True)
     popsize: int = eqx.field(static=True, default=1)
+    switch_ports: SwitchPorts | None = eqx.field(static=True, default=None)
 
 
 class PopulationParts(eqx.Module):
@@ -232,6 +241,10 @@ class PopulationParts(eqx.Module):
         Whether the optimizer draws its own post-switch population
         (:attr:`~l2co_optimizers._src.core.state_transfer.TransferSpec.own_ask`,
         ``l2co ADR 0014``).
+    switch_ports : SwitchPorts or None
+        Built by
+        :func:`~l2co_optimizers._src.core.switch_ports.build_switch_ports`,
+        exactly as the ``UpdateClass`` factory does (ADR 0012).
     """
 
     init_fn: Callable = eqx.field(static=True)
@@ -243,6 +256,7 @@ class PopulationParts(eqx.Module):
     transfer_read_fn: Callable = eqx.field(static=True)
     transfer_write_fn: Callable = eqx.field(static=True)
     own_ask: bool = eqx.field(static=True, default=False)
+    switch_ports: SwitchPorts | None = eqx.field(static=True, default=None)
 
 
 #                                                                  Resolution
@@ -400,6 +414,7 @@ def optimizer_parts(
         read_fn, write_fn = build_transfer_fns(
             name, FAMILY_GRADIENT, hyperparams
         )
+        switch_ports = build_switch_ports(name, FAMILY_GRADIENT)
         return GradientParts(
             transform=transform,
             name_hash=int(opt_step.hash),
@@ -409,6 +424,7 @@ def optimizer_parts(
             family=FAMILY_GRADIENT,
             transfer_read_fn=read_fn,
             transfer_write_fn=write_fn,
+            switch_ports=switch_ports,
         )
 
     # --- optimistix gradient solvers -----------------------------------
@@ -419,6 +435,7 @@ def optimizer_parts(
         read_fn, write_fn = build_transfer_fns(
             name, FAMILY_GRADIENT, hyperparams
         )
+        switch_ports = build_switch_ports(name, FAMILY_GRADIENT)
         return GradientParts(
             transform=solver_transform(GRADIENT_SOLVERS[name](**hyperparams)),
             name_hash=int(opt_step.hash),
@@ -426,6 +443,7 @@ def optimizer_parts(
             family=FAMILY_GRADIENT,
             transfer_read_fn=read_fn,
             transfer_write_fn=write_fn,
+            switch_ports=switch_ports,
         )
 
     # --- stepped scipy minimisers --------------------------------------
@@ -436,6 +454,7 @@ def optimizer_parts(
         read_fn, write_fn = build_transfer_fns(
             name, FAMILY_GRADIENT, hyperparams
         )
+        switch_ports = build_switch_ports(name, FAMILY_GRADIENT)
         return GradientParts(
             transform=STEPPED_SCIPY_TRANSFORMS[name](**hyperparams),
             name_hash=int(opt_step.hash),
@@ -443,6 +462,7 @@ def optimizer_parts(
             family=FAMILY_GRADIENT,
             transfer_read_fn=read_fn,
             transfer_write_fn=write_fn,
+            switch_ports=switch_ports,
         )
 
     # --- Evosax / population-based -------------------------------------
@@ -599,6 +619,7 @@ def optimizer_parts(
             hyperparams,
             ravel_fn=(algo._ravel_solution if is_distribution_based else None),
         )
+        switch_ports = build_switch_ports(name, family, es_params)
         return PopulationParts(
             init_fn=init_fn,
             ask_fn=ask_fn,
@@ -608,6 +629,7 @@ def optimizer_parts(
             family=family,
             transfer_read_fn=read_fn,
             transfer_write_fn=write_fn,
+            switch_ports=switch_ports,
             own_ask=spec.own_ask,
         )
 
@@ -695,6 +717,7 @@ def optimizer_parts(
         read_fn, write_fn = build_transfer_fns(
             name, FAMILY_POPULATION, hyperparams
         )
+        switch_ports = build_switch_ports(name, FAMILY_POPULATION)
         return PopulationParts(
             init_fn=init_fn,
             ask_fn=ask_fn,
@@ -704,6 +727,7 @@ def optimizer_parts(
             family=FAMILY_POPULATION,
             transfer_read_fn=read_fn,
             transfer_write_fn=write_fn,
+            switch_ports=switch_ports,
             own_ask=spec.own_ask,
         )
 

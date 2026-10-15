@@ -37,6 +37,7 @@ from l2co_optimizers._src.core.opt_history import OptHistory, RecentHistory
 from l2co_optimizers._src.core.state_transfer import (
     FAMILY_GRADIENT,
 )
+from l2co_optimizers._src.core.switch_ports import SwitchPorts
 from l2co_optimizers._src.core.typing import (
     AskFunction,
     Carry,
@@ -155,6 +156,13 @@ class UpdateClass(eqx.Module):
         construction because they need hyperparameters the state does
         not retain -- the learning rate, Rprop's clip bounds, the ravel
         function evosax uses to flatten a solution.
+    switch_ports : SwitchPorts or None
+        What this optimizer declares to a switching loop beyond its
+        scale: where it is, the shape it has learned and how fast that
+        shape adapts, and what a restart keeps
+        (:class:`~l2co_optimizers._src.core.switch_ports.SwitchPorts`,
+        ADR 0012). Set by every factory of a switchable optimizer;
+        ``None`` only for a hand-constructed ``UpdateClass``.
     sequential_realizations : bool
         Class-level marker (not a field): whether a multi-realization
         run must execute one realization at a time rather than with all
@@ -185,6 +193,7 @@ class UpdateClass(eqx.Module):
     transfer_write_fn: TransferWriteFunction | None = eqx.field(
         static=True, default=None
     )
+    switch_ports: SwitchPorts | None = eqx.field(static=True, default=None)
 
     @property
     def fevals_bound(self) -> int:

@@ -84,6 +84,11 @@ from l2co_optimizers._src.core.state_transfer import (
     TransferBundle,
     build_transfer_fns,
 )
+from l2co_optimizers._src.core.switch_ports import (
+    Shape,
+    SwitchPorts,
+    build_switch_ports,
+)
 from l2co_optimizers._src.core.typing import (
     AskFunction,
     Carry,
@@ -167,14 +172,17 @@ __all__ = [
     "RunResult",
     "RunState",
     "SamplerFunction",
+    "Shape",
     "StepFunction",
     "StopFunction",
+    "SwitchPorts",
     "TransferBundle",
     "TransferReadFunction",
     "TransferWriteFunction",
     "UpdateClass",
     "batch_evaluate",
     "batch_reset",
+    "build_switch_ports",
     "build_transfer_fns",
     "constraint_handling",
     "constant_sampling",
