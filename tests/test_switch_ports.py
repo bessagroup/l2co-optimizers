@@ -273,6 +273,25 @@ class TestReaders:
         shape = _ports("iamalgamfull").read_shape(state)
         np.testing.assert_allclose(float(shape.scale), 2.0, rtol=1e-6)
 
+    @pytest.mark.parametrize("name", sorted(SHAPED))
+    def test_a_collapsed_step_size_reads_as_itself(self, name):
+        # Sep-CMA-ES on a sharp ridge shrinks std until std² underflows
+        # to zero. Its width must still read as std times its shape's,
+        # not as zero or NaN.
+        ports = _ports(name)
+        shape = ports.read_shape(_at_step_size(name, _COLLAPSED))
+        at_unit = ports.read_shape(_at_step_size(name, 1.0))
+        assert np.all(np.isfinite(np.asarray(shape.diagonal))), name
+        np.testing.assert_allclose(
+            float(shape.scale) / _COLLAPSED, float(at_unit.scale), rtol=1e-5
+        )
+
+    @pytest.mark.parametrize("name", sorted(SHAPED))
+    def test_a_zero_step_size_reads_finite(self, name):
+        shape = _ports(name).read_shape(_at_step_size(name, 0.0))
+        assert np.isfinite(float(shape.scale)), name
+        assert np.all(np.isfinite(np.asarray(shape.diagonal))), name
+
 
 class TestDistance:
     def test_neutral_distance_is_rms_over_scale(self):
@@ -375,6 +394,29 @@ _DISTORTED = {
 }
 
 
+#: A step size whose square underflows to zero in the active float type.
+_COLLAPSED = float(jnp.sqrt(jnp.finfo(jnp.asarray(1.0).dtype).tiny)) * 1e-3
+
+
+def _at_step_size(name, factor):
+    """The ``_DISTORTED`` state of ``name`` at ``factor`` times its step.
+
+    Where the step size is the shape (SNES, SimpleES) the stretched
+    widths are scaled. iAMaLGaM adds its ``std`` to the shape instead
+    of multiplying it, so its shape is emptied and ``std`` alone
+    collapses.
+    """
+    fields = dict(_DISTORTED[name])
+    if "std" in fields:
+        fields["std"] = fields["std"] * factor
+        return _es_state(name, **fields)[0]
+    fresh, _ = _es_state(name)
+    if name.startswith("iamalgam"):
+        fields = {"C": jnp.zeros_like(fresh.C)}
+    std = jnp.full_like(jnp.asarray(fresh.std, float), factor)
+    return _es_state(name, std=std, **fields)[0]
+
+
 class TestNeutralize:
     @pytest.mark.parametrize("name", sorted(SHAPED))
     def test_declared_with_the_shape_reader(self, problem, name):
@@ -403,3 +445,21 @@ class TestNeutralize:
             rtol=1e-5,
         )
         assert float(jnp.max(before.diagonal) / jnp.min(before.diagonal)) > 2
+
+    @pytest.mark.parametrize("name", sorted(SHAPED))
+    @pytest.mark.parametrize("factor", [_COLLAPSED, 0.0])
+    def test_a_collapsed_step_size_stays_finite(self, name, factor):
+        # Forgetting the shape divides the old width by the new: with
+        # std² underflowed, or std exactly zero, that was 0 / 0 and the
+        # optimizer's next population was all NaN.
+        old = _at_step_size(name, factor)
+        fresh, _ = _es_state(name)
+        ports = _ports(name)
+        after = ports.neutralize(old, fresh)
+        assert np.all(np.isfinite(np.asarray(after.std))), name
+        if factor > 0:
+            np.testing.assert_allclose(
+                float(ports.read_shape(after).scale),
+                float(ports.read_shape(old).scale),
+                rtol=1e-5,
+            )
