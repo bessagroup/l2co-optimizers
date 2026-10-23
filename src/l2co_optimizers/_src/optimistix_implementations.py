@@ -84,6 +84,7 @@ from l2co_optimizers._src.core.state_transfer import (
     FAMILY_POPULATION,
     build_transfer_fns,
 )
+from l2co_optimizers._src.core.switch_ports import build_switch_ports
 from l2co_optimizers._src.core.typing import (
     InputParameters,
     LossFunction,
@@ -688,6 +689,7 @@ def _gradient_solver_update(
     transfer_read_fn, transfer_write_fn = build_transfer_fns(
         name, FAMILY_GRADIENT
     )
+    switch_ports = build_switch_ports(name, FAMILY_GRADIENT)
 
     _, static = eqx.partition(model, eqx.is_inexact_array)
     fn = _objective(static, loss_fn, pass_rng, bounded)
@@ -756,6 +758,7 @@ def _gradient_solver_update(
         family=FAMILY_GRADIENT,
         transfer_read_fn=transfer_read_fn,
         transfer_write_fn=transfer_write_fn,
+        switch_ports=switch_ports,
     )
 
 

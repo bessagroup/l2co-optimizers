@@ -81,6 +81,7 @@ from l2co_optimizers._src.core.state_transfer import (
     FAMILY_GRADIENT,
     build_transfer_fns,
 )
+from l2co_optimizers._src.core.switch_ports import build_switch_ports
 from l2co_optimizers._src.core.typing import (
     InputParameters,
     LossFunction,
@@ -598,6 +599,7 @@ def _stepped_update(
     ``transform.update``. One step is one evaluation, billed 1.
     """
     read_fn, write_fn = build_transfer_fns(name, FAMILY_GRADIENT)
+    switch_ports = build_switch_ports(name, FAMILY_GRADIENT)
     model_params, _ = eqx.partition(model, eqx.is_inexact_array)
     _, unravel = ravel_pytree(model_params)
     loss_at = _loss_at(model, loss_fn, pass_rng, bounded)
@@ -642,6 +644,7 @@ def _stepped_update(
         family=FAMILY_GRADIENT,
         transfer_read_fn=read_fn,
         transfer_write_fn=write_fn,
+        switch_ports=switch_ports,
     )
 
 
