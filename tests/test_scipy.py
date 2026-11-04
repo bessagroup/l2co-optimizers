@@ -1,8 +1,11 @@
-"""Unit tests for the scipy registry entries (ADRs 0002, 0003).
+"""Unit tests for the whole-run scipy registry entries (ADRs 0002, 0003,
+0009).
 
-``"cobyqa"``, ``"powell"``, ``"tnc"``, ``"trustkrylov"``, ``"slsqp"`` and
-``"trustconstr"`` hand a whole run to :func:`scipy.optimize.minimize`
-inside one host callback. The properties checked:
+``"cobyqa"``, ``"cobyla"``, ``"powell"``, ``"tnc"``, ``"trustkrylov"``,
+``"slsqp"`` and ``"trustconstr"`` hand a whole run to
+:func:`scipy.optimize.minimize` inside one host callback. ``"lbfgsb"``
+did too until ADR 0011 stepped it (``tests/test_scipy_stepped.py``). The
+properties checked:
 
 1. the wrapper is transparent -- its evaluations are the ones a direct
    ``scipy.optimize.minimize`` call makes, until scipy stops;
@@ -45,6 +48,7 @@ from l2co_optimizers import (
 from l2co_optimizers._src.core.state_transfer import transfer_spec_for
 from l2co_optimizers._src.mapping import optimizer_mapping, optimizers
 from l2co_optimizers._src.scipy_implementations import (
+    _COBYLA_TOL,
     _COBYQA_FINAL_TR_RADIUS,
     _POWELL_FTOL,
     _POWELL_XTOL,
@@ -59,6 +63,7 @@ from l2co_optimizers._src.scipy_implementations import (
     SCIPY_OPTIMIZERS,
     ScipyUpdateClass,
     _scipy_update,
+    cobyla_update,
     cobyqa_update,
     powell_update,
     slsqp_update,
@@ -76,8 +81,23 @@ __credits__ = ["Martin van der Schelling"]
 __status__ = "Stable"
 # =============================================================================
 
-NAMES = ("cobyqa", "powell", "tnc", "trustkrylov", "slsqp", "trustconstr")
-NATIVE_BOUNDS = ("cobyqa", "powell", "tnc", "slsqp", "trustconstr")
+NAMES = (
+    "cobyqa",
+    "cobyla",
+    "powell",
+    "tnc",
+    "trustkrylov",
+    "slsqp",
+    "trustconstr",
+)
+NATIVE_BOUNDS = (
+    "cobyqa",
+    "cobyla",
+    "powell",
+    "tnc",
+    "slsqp",
+    "trustconstr",
+)
 DIM = 3
 
 
@@ -148,6 +168,7 @@ def _counting(loss_fn, calls):
     ("name", "factory"),
     [
         ("cobyqa", cobyqa_update),
+        ("cobyla", cobyla_update),
         ("powell", powell_update),
         ("tnc", tnc_update),
         ("trustkrylov", trustkrylov_update),
@@ -162,7 +183,11 @@ def test_registered_under_its_bare_name(name, factory):
 
 @pytest.mark.parametrize(
     ("spelling", "name"),
-    [("trust-krylov", "trustkrylov"), ("trust-constr", "trustconstr")],
+    [
+        ("trust-krylov", "trustkrylov"),
+        ("trust-constr", "trustconstr"),
+        ("COBYLA", "cobyla"),
+    ],
 )
 def test_resolves_from_its_scipy_spelling(spelling, name):
     assert optimizer_mapping(spelling) is optimizers[name]
@@ -200,6 +225,13 @@ def _direct_scipy(name, loss_fn, x0):
                 maxfev=_UNREACHABLE,
                 maxiter=_UNREACHABLE,
             ),
+        )
+    elif name == "cobyla":
+        so.minimize(
+            f,
+            x0,
+            method="COBYLA",
+            options=dict(tol=_COBYLA_TOL, maxiter=_UNREACHABLE),
         )
     elif name == "powell":
         so.minimize(
@@ -346,7 +378,7 @@ def test_best_is_the_lowest_evaluation(name):
 
 
 @pytest.mark.parametrize(
-    "name", ["cobyqa", "tnc", "trustkrylov", "trustconstr"]
+    "name", ["cobyqa", "cobyla", "tnc", "trustkrylov", "trustconstr"]
 )
 def test_final_point_is_re_evaluated_until_the_budget(name):
     calls = []
@@ -475,6 +507,42 @@ def test_every_evaluated_point_lies_in_the_box(name):
         assert points.max() <= bounded[1]
 
 
+def test_cobyla_leaves_the_box_and_is_evaluated_at_its_projection():
+    """COBYLA takes the box as constraints it may violate on the way.
+
+    The points it proposes outside the box are evaluated, and recorded,
+    at their projection into it (ADR 0009).
+    """
+    bounded = (-1.0, 0.2)
+    proposed = []
+    real = so.minimize
+
+    def spy(fun, *args, **kwargs):
+        def seen(x):
+            proposed.append(np.array(x))
+            return fun(x)
+
+        return real(seen, *args, **kwargs)
+
+    calls = []
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "l2co_optimizers._src.scipy_implementations.so.minimize", spy
+        )
+        _run(
+            _build("cobyla", _counting(_wavy, calls), bounded=bounded),
+            100,
+        )
+    jax.effects_barrier()
+    # After the points COBYLA proposed, the driver re-evaluates its
+    # final point to the budget.
+    proposed = np.stack(proposed)
+    calls = np.stack(calls)[: len(proposed)]
+    outside = np.any((proposed < bounded[0]) | (proposed > bounded[1]), 1)
+    assert outside.any()
+    np.testing.assert_allclose(calls, np.clip(proposed, *bounded), rtol=1e-6)
+
+
 @pytest.mark.parametrize("name", NATIVE_BOUNDS)
 def test_native_bounds_reach_the_boundary_optimum(name):
     # The box optimum of ``(x - 0.5)^2`` on [-1, 0.2] is x = 0.2.
@@ -577,6 +645,7 @@ def test_batches_are_drawn_as_the_run_loop_draws_them():
     ("name", "hp"),
     [
         ("cobyqa", {"initial_tr_radius": 0.1}),
+        ("cobyla", {"rhobeg": 0.1}),
         # scipy's default is max(1, min(50, n / 2)), i.e. 1 at n = 3.
         ("tnc", {"max_cg_iterations": 3}),
         ("tnc", {"eta": 0.9}),
@@ -598,6 +667,8 @@ def test_hyperparameters_change_the_run(name, hp):
     ("name", "hp", "option", "value"),
     [
         ("cobyqa", {"initial_tr_radius": 0.3}, "initial_tr_radius", 0.3),
+        ("cobyla", {"rhobeg": 0.3}, "rhobeg", 0.3),
+        ("cobyla", {}, "rhobeg", 1.0),
         ("tnc", {"eta": 0.9}, "eta", 0.9),
         ("tnc", {"stepmx": 2.0}, "stepmx", 2.0),
         ("tnc", {"max_cg_iterations": 2}, "maxCGit", 2),
@@ -646,6 +717,14 @@ def test_hyperparameters_reach_scipy(monkeypatch, name, hp, option, value):
     )
     _run(_build(name, **hp), 20)
     assert seen and seen[0][option] == value
+
+
+@pytest.mark.parametrize("rhobeg", [0.0, -1.0, 1e-16, np.inf, np.nan])
+def test_cobyla_refuses_a_radius_prima_would_replace(rhobeg):
+    """PRIMA would replace it with only a warning, so the run would not
+    be the one configured."""
+    with pytest.raises(ValueError, match="rhobeg"):
+        _build("cobyla", rhobeg=rhobeg)
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -725,6 +804,7 @@ def test_batch_run_maps_its_own_run_over_realizations(name):
     ("name", "family"),
     [
         ("cobyqa", FAMILY_DERIVATIVE_FREE),
+        ("cobyla", FAMILY_DERIVATIVE_FREE),
         ("powell", FAMILY_DERIVATIVE_FREE),
         ("tnc", FAMILY_GRADIENT),
         ("trustkrylov", FAMILY_GRADIENT),

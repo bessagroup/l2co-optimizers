@@ -45,6 +45,18 @@ def test_all_symbols_are_importable():
         ("optimizer_mapping", "l2co_optimizers._src.mapping"),
         ("optimizers", "l2co_optimizers._src.mapping"),
         ("normalize_key", "l2co_optimizers._src.core.utils"),
+        # Constraint handling per registry entry (ADR 0008)
+        ("constraint_handling", "l2co_optimizers._src.mapping"),
+        (
+            "CONSTRAINT_HANDLING_LEVELS",
+            "l2co_optimizers._src.core.constraint_handling",
+        ),
+        ("CONSTRAINTS_NONE", "l2co_optimizers._src.core.constraint_handling"),
+        ("CONSTRAINTS_BOX", "l2co_optimizers._src.core.constraint_handling"),
+        (
+            "CONSTRAINTS_GENERAL",
+            "l2co_optimizers._src.core.constraint_handling",
+        ),
         # Contract types
         ("InitFunction", "l2co_optimizers._src.core.typing"),
         ("StepFunction", "l2co_optimizers._src.core.typing"),
@@ -61,9 +73,15 @@ def test_all_symbols_are_importable():
         ("vmapped_loss_and_grad_with_rng", "l2co_optimizers._src.core.loss"),
         # What a switching loop drives (l2co ADR 0019)
         ("optimizer_parts", "l2co_optimizers._src.optimizer_parts"),
+        ("PLAIN_RUN_OPTIMIZERS", "l2co_optimizers._src.optimizer_parts"),
         ("GradientParts", "l2co_optimizers._src.optimizer_parts"),
         ("PopulationParts", "l2co_optimizers._src.optimizer_parts"),
         ("step_fevals", "l2co_optimizers._src.optax_implementations"),
+        # What every switchable optimizer declares to a switching loop
+        # (ADR 0012)
+        ("Shape", "l2co_optimizers._src.core.switch_ports"),
+        ("SwitchPorts", "l2co_optimizers._src.core.switch_ports"),
+        ("build_switch_ports", "l2co_optimizers._src.core.switch_ports"),
         # The family held only by plain-run entries (ADR 0002)
         (
             "FAMILY_DERIVATIVE_FREE",
@@ -83,6 +101,10 @@ def test_all_symbols_are_importable():
         ("RecentHistory", "l2co_optimizers._src.core.opt_history"),
         ("get_sampler", "l2co_optimizers._src.core.sampler"),
         ("random_sampling", "l2co_optimizers._src.core.sampler"),
+        (
+            "relative_normal_sampling",
+            "l2co_optimizers._src.core.sampler",
+        ),
         ("count_parameters", "l2co_optimizers._src.core.popsize"),
         (
             "create_schedules_experimentdata",

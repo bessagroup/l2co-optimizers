@@ -48,6 +48,10 @@ from l2co_optimizers._src.core.state_transfer import (
     build_transfer_fns,
     transfer_spec_for,
 )
+from l2co_optimizers._src.core.switch_ports import (
+    SwitchPorts,
+    build_switch_ports,
+)
 from l2co_optimizers._src.core.typing import LossFunction
 from l2co_optimizers._src.core.utils import normalize_key
 from l2co_optimizers._src.evosax_implementations import normalized_evosax
@@ -62,10 +66,17 @@ from l2co_optimizers._src.optax_implementations import (
     normalized_optax_normal,
 )
 from l2co_optimizers._src.optimistix_implementations import (
+    GRADIENT_SOLVERS,
     OPTIMISTIX_OPTIMIZERS,
+    solver_transform,
+)
+from l2co_optimizers._src.random_search import (
+    RANDOM_SEARCH_OPTIMIZERS,
+    random_search_sampling_fn,
 )
 from l2co_optimizers._src.rbf_trust_region import RBFTrustRegion
 from l2co_optimizers._src.scipy_implementations import SCIPY_OPTIMIZERS
+from l2co_optimizers._src.scipy_stepped import STEPPED_SCIPY_TRANSFORMS
 from l2co_optimizers._src.shade import SHADE
 from l2co_optimizers._src.turbo import TuRBO
 
@@ -80,12 +91,27 @@ __all__ = [
     "CONSTRUCTOR_HYPERPARAMETERS",
     "LINESEARCH_FEVAL_BOUND",
     "GradientParts",
+    "PLAIN_RUN_OPTIMIZERS",
     "PopulationParts",
     "l2co_native_evosax",
     "l2co_native_optax",
     "optimizer_parts",
     "resolve_popsize",
 ]
+
+#: Registry names that run only as plain registry entries (normalized). Their
+#: solver owns the loop or cannot yet be stepped by one -- Nelder--Mead
+#: (ADR 0001), the scipy minimisers (ADR 0002), IPOPT (ADR 0003) -- so
+#: :func:`optimizer_parts` refuses them, and they can never be a sub-optimizer
+#: in a switching menu or an rl2co action. A caller assembling a menu from a
+#: configured suite leaves these out. ADR 0011 takes the steppable ones off
+#: this list in stages; the optimistix gradient solvers and scipy's
+#: L-BFGS-B are off it already.
+PLAIN_RUN_OPTIMIZERS: frozenset[str] = (
+    (OPTIMISTIX_OPTIMIZERS - frozenset(GRADIENT_SOLVERS))
+    | SCIPY_OPTIMIZERS
+    | IPOPT_OPTIMIZERS
+)
 
 
 # l2co-native evosax-style algorithms: absent from evosax's own
@@ -168,6 +194,10 @@ class GradientParts(eqx.Module):
         ``transfer_write_fn(bundle, opt_state) -> opt_state``.
     popsize : int
         Always ``1``.
+    switch_ports : SwitchPorts or None
+        Built by
+        :func:`~l2co_optimizers._src.core.switch_ports.build_switch_ports`,
+        exactly as the ``UpdateClass`` factory does (ADR 0012).
     """
 
     transform: optax.GradientTransformation = eqx.field(static=True)
@@ -177,6 +207,7 @@ class GradientParts(eqx.Module):
     transfer_read_fn: Callable = eqx.field(static=True)
     transfer_write_fn: Callable = eqx.field(static=True)
     popsize: int = eqx.field(static=True, default=1)
+    switch_ports: SwitchPorts | None = eqx.field(static=True, default=None)
 
 
 class PopulationParts(eqx.Module):
@@ -210,6 +241,10 @@ class PopulationParts(eqx.Module):
         Whether the optimizer draws its own post-switch population
         (:attr:`~l2co_optimizers._src.core.state_transfer.TransferSpec.own_ask`,
         ``l2co ADR 0014``).
+    switch_ports : SwitchPorts or None
+        Built by
+        :func:`~l2co_optimizers._src.core.switch_ports.build_switch_ports`,
+        exactly as the ``UpdateClass`` factory does (ADR 0012).
     """
 
     init_fn: Callable = eqx.field(static=True)
@@ -221,6 +256,7 @@ class PopulationParts(eqx.Module):
     transfer_read_fn: Callable = eqx.field(static=True)
     transfer_write_fn: Callable = eqx.field(static=True)
     own_ask: bool = eqx.field(static=True, default=False)
+    switch_ports: SwitchPorts | None = eqx.field(static=True, default=None)
 
 
 #                                                                  Resolution
@@ -286,16 +322,20 @@ def optimizer_parts(
     :data:`~l2co_optimizers._src.optax_implementations.
     normalized_optax_normal`, :data:`...normalized_optax_from_state`,
     :data:`l2co_native_optax` (e.g. ``'lbfgs'``), :data:`~l2co_optimizers.
-    _src.evosax_implementations.normalized_evosax`, and
-    :data:`l2co_native_evosax` (e.g. ``'shade'``). Population size is
-    resolved by :func:`resolve_popsize`, so it always equals the
+    _src.evosax_implementations.normalized_evosax`,
+    :data:`l2co_native_evosax` (e.g. ``'shade'``),
+    ``RANDOM_SEARCH_OPTIMIZERS``, the optimistix ``GRADIENT_SOLVERS``
+    (``'bfgs'``, ``'dfp'``, ``'nonlinearcg'``) and the stepped scipy
+    minimisers (``'lbfgsb'``; both ADR 0011). Population
+    size is resolved by :func:`resolve_popsize`, so it always equals the
     ``UpdateClass`` factory's.
 
-    Note that this path has no ``bounded`` channel: algorithms whose
-    internals use box bounds (SHADE's midpoint boundary repair and
-    turning-based mutation) receive them as ordinary ``x_min`` /
-    ``x_max`` hyperparameters instead; without them SHADE runs
-    unbounded (its repair degrades to a no-op).
+    Note that this path has no ``bounded`` channel: ``'lbfgsb'`` runs
+    unbounded here, though its registry entry hands scipy the box, and
+    algorithms whose internals use box bounds (SHADE's midpoint boundary
+    repair and turning-based mutation) receive them as ordinary
+    ``x_min`` / ``x_max`` hyperparameters instead; without them SHADE
+    runs unbounded (its repair degrades to a no-op).
 
     Nor does it have a per-evaluation-key channel: the ``value_fn``
     reaching a line search here is the caller's plain ``params ->
@@ -338,9 +378,9 @@ def optimizer_parts(
     ------
     ValueError
         If ``opt_step.optimizer`` is not found in any of the registries,
-        including when it names one of the optimistix minimisers (ADR
-        0001), the scipy minimisers (ADR 0002) or IPOPT (ADR 0003),
-        which have no parts representation.
+        including when it names Nelder--Mead (ADR 0001), the scipy
+        minimisers (ADR 0002) or IPOPT (ADR 0003), which have no parts
+        representation.
     """
     name = normalize_key(opt_step.optimizer)
     hyperparams = dict(opt_step.hyperparameters)
@@ -374,6 +414,7 @@ def optimizer_parts(
         read_fn, write_fn = build_transfer_fns(
             name, FAMILY_GRADIENT, hyperparams
         )
+        switch_ports = build_switch_ports(name, FAMILY_GRADIENT)
         return GradientParts(
             transform=transform,
             name_hash=int(opt_step.hash),
@@ -383,6 +424,45 @@ def optimizer_parts(
             family=FAMILY_GRADIENT,
             transfer_read_fn=read_fn,
             transfer_write_fn=write_fn,
+            switch_ports=switch_ports,
+        )
+
+    # --- optimistix gradient solvers -----------------------------------
+    if name in GRADIENT_SOLVERS:
+        # The registry factory's own solver, driven as an optax transform
+        # whose ``params`` is always the solver's next evaluation point
+        # (ADR 0011). One evaluation per step, so no feval bound.
+        read_fn, write_fn = build_transfer_fns(
+            name, FAMILY_GRADIENT, hyperparams
+        )
+        switch_ports = build_switch_ports(name, FAMILY_GRADIENT)
+        return GradientParts(
+            transform=solver_transform(GRADIENT_SOLVERS[name](**hyperparams)),
+            name_hash=int(opt_step.hash),
+            max_fevals_per_step=None,
+            family=FAMILY_GRADIENT,
+            transfer_read_fn=read_fn,
+            transfer_write_fn=write_fn,
+            switch_ports=switch_ports,
+        )
+
+    # --- stepped scipy minimisers --------------------------------------
+    if name in STEPPED_SCIPY_TRANSFORMS:
+        # The registry factory's transform, built without a box: the parts
+        # path has no bounds channel yet (ADR 0011). One evaluation per
+        # step, so no feval bound.
+        read_fn, write_fn = build_transfer_fns(
+            name, FAMILY_GRADIENT, hyperparams
+        )
+        switch_ports = build_switch_ports(name, FAMILY_GRADIENT)
+        return GradientParts(
+            transform=STEPPED_SCIPY_TRANSFORMS[name](**hyperparams),
+            name_hash=int(opt_step.hash),
+            max_fevals_per_step=None,
+            family=FAMILY_GRADIENT,
+            transfer_read_fn=read_fn,
+            transfer_write_fn=write_fn,
+            switch_ports=switch_ports,
         )
 
     # --- Evosax / population-based -------------------------------------
@@ -539,6 +619,7 @@ def optimizer_parts(
             hyperparams,
             ravel_fn=(algo._ravel_solution if is_distribution_based else None),
         )
+        switch_ports = build_switch_ports(name, family, es_params)
         return PopulationParts(
             init_fn=init_fn,
             ask_fn=ask_fn,
@@ -548,17 +629,117 @@ def optimizer_parts(
             family=family,
             transfer_read_fn=read_fn,
             transfer_write_fn=write_fn,
+            switch_ports=switch_ports,
+            own_ask=spec.own_ask,
+        )
+
+    # --- Random search -------------------------------------------------
+    if name in RANDOM_SEARCH_OPTIMIZERS:
+        # Same sampler as the registry factory, so a switch into random
+        # search draws what a plain random-search run draws: candidates
+        # from the task's starting distribution, independent of the
+        # point the loop hands in (ADR 0011).
+        sampling_fn = random_search_sampling_fn(model, **hyperparams)
+
+        def init_fn(params: PyTree, key: PRNGKeyArray) -> Array:
+            """Return the placeholder state; random search holds none.
+
+            Parameters
+            ----------
+            params : PyTree
+                Unused.
+            key : PRNGKeyArray
+                Unused.
+
+            Returns
+            -------
+            Array
+                A scalar placeholder, as the registry path's ``init_fn``
+                returns.
+            """
+            del params, key
+            return jnp.array(0, dtype=int)
+
+        def ask_fn(
+            params: PyTree,
+            opt_state: Array,
+            key: PRNGKeyArray,
+        ) -> tuple[PyTree, Array]:
+            """Draw ``popsize`` fresh candidates.
+
+            Parameters
+            ----------
+            params : PyTree
+                Unused: candidates are drawn around the model, not
+                around the current point.
+            opt_state : Array
+                Placeholder state, returned unchanged.
+            key : PRNGKeyArray
+                Sampling key.
+
+            Returns
+            -------
+            tuple[PyTree, Array]
+                ``(population, opt_state)`` with ``population`` of shape
+                ``(popsize, *params_shape)``.
+            """
+            del params
+            return sampling_fn(key, popsize), opt_state
+
+        def tell_fn(
+            opt_state: Array,
+            population: PyTree,
+            fitnesses: Float[Array, " popsize"],
+            key: PRNGKeyArray,
+        ) -> Array:
+            """Learn nothing from the fitnesses.
+
+            Parameters
+            ----------
+            opt_state : Array
+                Placeholder state.
+            population : PyTree
+                Unused.
+            fitnesses : Float[Array, " popsize"]
+                Unused.
+            key : PRNGKeyArray
+                Unused.
+
+            Returns
+            -------
+            Array
+                ``opt_state``, unchanged.
+            """
+            del population, fitnesses, key
+            return opt_state
+
+        spec = transfer_spec_for(name, FAMILY_POPULATION)
+        read_fn, write_fn = build_transfer_fns(
+            name, FAMILY_POPULATION, hyperparams
+        )
+        switch_ports = build_switch_ports(name, FAMILY_POPULATION)
+        return PopulationParts(
+            init_fn=init_fn,
+            ask_fn=ask_fn,
+            tell_fn=tell_fn,
+            popsize=int(popsize),
+            name_hash=int(opt_step.hash),
+            family=FAMILY_POPULATION,
+            transfer_read_fn=read_fn,
+            transfer_write_fn=write_fn,
+            switch_ports=switch_ports,
             own_ask=spec.own_ask,
         )
 
     if name in OPTIMISTIX_OPTIMIZERS:
         raise ValueError(
-            f"Optimizer {opt_step.optimizer!r} is an optimistix minimiser, "
-            f"which cannot be unpacked into parts: it evaluates the "
-            f"objective itself, so it is neither an optax transform "
+            f"Optimizer {opt_step.optimizer!r} is optimistix's "
+            f"Nelder-Mead, which cannot be unpacked into parts yet: a step "
+            f"evaluates two or more points, the second chosen from the "
+            f"first's loss, so it is neither an optax transform "
             f"(GradientParts) nor an ask/tell population (PopulationParts). "
             f"It runs only as a plain registry entry, not inside a "
-            f"switching menu (ADR 0001)."
+            f"switching menu (ADRs 0001, 0011)."
         )
 
     if name in SCIPY_OPTIMIZERS:
@@ -584,7 +765,9 @@ def optimizer_parts(
         f"Optimizer {opt_step.optimizer!r} cannot be unpacked into "
         f"parts: it is absent from normalized_optax_normal, "
         f"normalized_optax_from_state, l2co_native_optax, "
-        f"normalized_evosax and l2co_native_evosax. Note these are "
+        f"normalized_evosax, l2co_native_evosax, "
+        f"RANDOM_SEARCH_OPTIMIZERS, GRADIENT_SOLVERS and "
+        f"STEPPED_SCIPY_TRANSFORMS. Note these are "
         f"narrower than the optimizer registry — an optimizer that "
         f"``optimizer_mapping`` resolves may still be missing here. "
         f"Add it to the matching registry, or hand-build the switching "

@@ -13,8 +13,9 @@ optimistix minimiser's ``init`` / ``step``. The properties checked:
 7. optimistix 0.1.0's ``y0_simplex`` still rejects n > 1 and its own
    default simplex is still degenerate, which is why the population is
    injected as the simplex with ``eqx.tree_at``;
-8. none of them unpacks into switching parts, and Nelder--Mead runs its
-   realizations sequentially.
+8. the three gradient solvers unpack into switching parts that step the
+   same solver as the registry path (ADR 0011); Nelder--Mead does not
+   unpack yet, and runs its realizations sequentially.
 """
 
 #                                                                       Modules
@@ -30,7 +31,15 @@ import optimistix as optx
 import pytest
 
 # Local
-from l2co_optimizers import BatchState, OptimizationStep, optimizer_parts
+from l2co_optimizers import (
+    CONF_ABSENT,
+    CONF_ESTIMATED,
+    BatchState,
+    GradientParts,
+    OptimizationStep,
+    optimizer_parts,
+    step_fevals,
+)
 from l2co_optimizers._src.mapping import optimizer_mapping, optimizers
 from l2co_optimizers._src.optimistix_implementations import (
     NONLINEAR_CG_METHODS,
@@ -555,14 +564,134 @@ def test_upstream_default_simplex_is_degenerate():
 
 
 # =============================================================================
-#                                              8. no switching, run modes
+#                                                  8. switching, run modes
+
+#: Each gradient solver's configurations, as (name, hyperparameters).
+SOLVER_CONFIGS = [
+    ("bfgs", {}),
+    ("bfgs", {"linesearch": "wolfe"}),
+    ("bfgs", {"use_inverse": False, "step_init": 0.5}),
+    ("dfp", {}),
+    ("nonlinearcg", {}),
+    ("nonlinearcg", {"method": "fletcher_reeves"}),
+]
 
 
-@pytest.mark.parametrize("name", sorted(OPTIMISTIX_OPTIMIZERS))
-def test_cannot_be_unpacked_into_switching_parts(name):
-    with pytest.raises(ValueError, match="optimistix minimiser"):
+def _parts(name, loss_fn, dim, **hyperparameters):
+    return optimizer_parts(
+        OptimizationStep(optimizer=name, hyperparameters=hyperparameters),
+        **quadratic_problem(jnp.zeros(dim), loss_fn),
+    )
+
+
+def _drive_parts(parts, loss_fn, x0, n_steps):
+    """A loop as a switching consumer runs it: evaluate, then update.
+
+    Returns the evaluated points, their losses and the final state.
+    """
+    update = eqx.filter_jit(
+        lambda g, s, p, v: parts.transform.update(g, s, p, value=v, grad=g)
+    )
+    params, state = x0, parts.transform.init(x0)
+    points, losses = [], []
+    for _ in range(n_steps):
+        value, grad = jax.value_and_grad(loss_fn)(params)
+        points.append(params)
+        losses.append(value)
+        step, state = update(grad, state, params, value)
+        params = params + step
+    return jnp.stack(points), jnp.stack(losses), state
+
+
+@pytest.mark.parametrize(("name", "hyperparameters"), SOLVER_CONFIGS)
+def test_parts_evaluate_the_points_the_registry_path_evaluates(
+    name, hyperparameters
+):
+    """The two drivers step one solver, so they visit the same points.
+
+    The registry path hands optimistix the real loss, which it
+    linearizes; the parts path hands it the loop's own ``value_and_grad``
+    through ``_told_loss``. The two gradients can differ in the last
+    bits (XLA may fuse them differently), so this is a tight tolerance,
+    not bitwise (ADR 0011). Float64, so that tolerance means something
+    over 60 steps.
+    """
+    with jax.enable_x64(True):
+        x0 = jnp.array([-1.2, 1.0, -0.5, 0.3], dtype=jnp.float64)
+        update_class = optimizer_mapping(name)(
+            **quadratic_problem(x0, _rosenbrock),
+            opt_hash=1,
+            bounded=(None, None),
+            stop_fn=None,
+            **hyperparameters,
+        )
+        _, histories = _drive(update_class, x0[None], 60)
+        registry_points = jnp.stack([h.params[0] for h in histories])
+        registry_losses = jnp.stack([h.loss[0] for h in histories])
+
+        parts = _parts(name, _rosenbrock, 4, **hyperparameters)
+        points, losses, _ = _drive_parts(parts, _rosenbrock, x0, 60)
+
+    np.testing.assert_allclose(points, registry_points, rtol=1e-8, atol=1e-8)
+    np.testing.assert_allclose(losses, registry_losses, rtol=1e-8, atol=1e-8)
+
+
+@pytest.mark.parametrize("name", GRADIENT_SOLVERS)
+def test_parts_are_gradient_parts_billed_one_per_step(name):
+    parts = _parts(name, _wavy, 3)
+    assert isinstance(parts, GradientParts)
+    assert parts.popsize == 1
+    assert parts.max_fevals_per_step is None
+    x0 = jnp.zeros(3)
+    before = parts.transform.init(x0)
+    value, grad = jax.value_and_grad(_wavy)(x0)
+    _, after = parts.transform.update(grad, before, x0, value=value)
+    assert int(step_fevals(before, after)) == 1
+
+
+@pytest.mark.parametrize("name", GRADIENT_SOLVERS)
+def test_parts_refuse_an_update_without_the_loss(name):
+    # The stub objective needs the loss at params; a consumer that does
+    # not forward ``value=`` cannot host these solvers.
+    parts = _parts(name, _wavy, 3)
+    x0 = jnp.zeros(3)
+    state = parts.transform.init(x0)
+    with pytest.raises(ValueError, match="value="):
+        parts.transform.update(jax.grad(_wavy)(x0), state, x0)
+
+
+@pytest.mark.parametrize("name", GRADIENT_SOLVERS)
+def test_parts_report_their_trial_step_as_scale(name):
+    parts = _parts(name, _wavy, 3)
+    x0 = jnp.zeros(3)
+    state = parts.transform.init(x0)
+    # Before the first step the solver's next point is its iterate.
+    _, conf = parts.transfer_read_fn(state)
+    assert float(conf) == CONF_ABSENT
+    _, _, state = _drive_parts(parts, _wavy, x0, 1)
+    sigma, conf = parts.transfer_read_fn(state)
+    step = state.solver_state.y_eval - state.y
+    assert float(conf) == CONF_ESTIMATED
+    np.testing.assert_allclose(sigma, jnp.sqrt(jnp.mean(step**2)), rtol=1e-6)
+    # Writes nothing: after the reset handshake there is no slot for it.
+    assert parts.transfer_write_fn.__name__ == "write_none"
+
+
+@pytest.mark.parametrize("name", GRADIENT_SOLVERS)
+def test_registry_path_carries_the_same_ports(name):
+    update_class = _build(name, _wavy, 3)
+    parts = _parts(name, _wavy, 3)
+    assert update_class.transfer_read_fn is parts.transfer_read_fn
+    assert (
+        update_class.transfer_write_fn.__name__
+        == parts.transfer_write_fn.__name__
+    )
+
+
+def test_neldermead_cannot_be_unpacked_into_switching_parts():
+    with pytest.raises(ValueError, match="Nelder-Mead"):
         optimizer_parts(
-            OptimizationStep(optimizer=name),
+            OptimizationStep(optimizer="neldermead"),
             **quadratic_problem(jnp.zeros(3), _wavy),
         )
 

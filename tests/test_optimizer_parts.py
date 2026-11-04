@@ -32,6 +32,7 @@ from l2co_optimizers import (
     FAMILY_DISTRIBUTION,
     FAMILY_GRADIENT,
     FAMILY_POPULATION,
+    PLAIN_RUN_OPTIMIZERS,
     GradientParts,
     OptimizationStep,
     PopulationParts,
@@ -39,21 +40,19 @@ from l2co_optimizers import (
 )
 from l2co_optimizers._src.core.state_transfer import transfer_spec_for
 from l2co_optimizers._src.evosax_implementations import normalized_evosax
-from l2co_optimizers._src.ipopt import IPOPT_OPTIMIZERS
 from l2co_optimizers._src.lbfgs import stock_lbfgs
 from l2co_optimizers._src.mapping import optimizers as OPTIMIZER_REGISTRY
 from l2co_optimizers._src.optax_implementations import (
     normalized_optax_from_state,
     normalized_optax_normal,
 )
-from l2co_optimizers._src.optimistix_implementations import (
-    OPTIMISTIX_OPTIMIZERS,
-)
+from l2co_optimizers._src.optimistix_implementations import GRADIENT_SOLVERS
 from l2co_optimizers._src.optimizer_parts import (
     l2co_native_evosax,
     l2co_native_optax,
 )
-from l2co_optimizers._src.scipy_implementations import SCIPY_OPTIMIZERS
+from l2co_optimizers._src.random_search import RANDOM_SEARCH_OPTIMIZERS
+from l2co_optimizers._src.scipy_stepped import STEPPED_SCIPY_TRANSFORMS
 
 from .toy_problems import sphere_problem
 
@@ -70,24 +69,13 @@ __status__ = "Stable"
 # though they are absent from this suite's registry.
 META_OPTIMIZERS = frozenset({"l2co", "rl2co"})
 
-# Random search is a structural baseline, not a menu entry: its
-# ``RandomSearchUpdateClass`` bypasses the step loop entirely. It used to
-# pass this check only because evosax's ``RandomSearch`` sat under the
-# same name in ``normalized_evosax`` -- and unpacking it raised (no
-# ``sampling_fn``).
-#
-# The optimistix minimisers evaluate the objective themselves, which is
-# neither an optax transform nor an ask/tell population, so they are
-# plain-run entries only (ADR 0001). The scipy minimisers run their whole
-# budget inside one host callback, so they have no step to unpack at all
-# (ADR 0002); so does IPOPT (ADR 0003).
-NON_PARTS_OPTIMIZERS = (
-    META_OPTIMIZERS
-    | {"randomsearch"}
-    | OPTIMISTIX_OPTIMIZERS
-    | SCIPY_OPTIMIZERS
-    | IPOPT_OPTIMIZERS
-)
+# Nelder--Mead evaluates two or more dependent points per step, which is
+# neither an optax transform nor an ask/tell population, so it is a
+# plain-run entry for now (ADRs 0001, 0011). The whole-run scipy minimisers
+# run their budget inside one host callback, so they have no step to unpack
+# at all (ADR 0002); so does IPOPT (ADR 0003). scipy's L-BFGS-B is stepped
+# one evaluation at a time instead, so it unpacks (ADR 0011).
+NON_PARTS_OPTIMIZERS = META_OPTIMIZERS | PLAIN_RUN_OPTIMIZERS
 
 
 def _parts_registries() -> set[str]:
@@ -98,6 +86,9 @@ def _parts_registries() -> set[str]:
         | set(l2co_native_optax)
         | set(normalized_evosax)
         | set(l2co_native_evosax)
+        | set(RANDOM_SEARCH_OPTIMIZERS)
+        | set(GRADIENT_SOLVERS)
+        | set(STEPPED_SCIPY_TRANSFORMS)
     )
 
 
@@ -270,7 +261,7 @@ class TestPopulationParts:
     """The ``(init, ask, tell)`` triple round-trips one generation."""
 
     @pytest.mark.parametrize(
-        "name", ["cmaes", "differentialevolution", "shade"]
+        "name", ["cmaes", "differentialevolution", "shade", "randomsearch"]
     )
     def test_ask_tell(self, name, problem):
         parts = optimizer_parts(OptimizationStep(optimizer=name), **problem)
@@ -282,6 +273,63 @@ class TestPopulationParts:
         state = parts.tell_fn(state, population, fitness, jr.key(2))
         sigma, _ = parts.transfer_read_fn(state)
         assert jnp.isfinite(sigma)
+
+
+class TestRandomSearchParts:
+    """Random search unpacks into a stateless ask/tell (ADR 0011)."""
+
+    def test_draws_around_the_model_not_the_handed_point(self, problem):
+        # The registry path samples the task's starting distribution
+        # whatever ran before it; a switch into it must do the same. A
+        # handed-in point far outside ``[0, 1)`` must not move the draws.
+        parts = optimizer_parts(
+            OptimizationStep(
+                optimizer="randomsearch", hyperparameters={"popsize": 64}
+            ),
+            **problem,
+        )
+        far = jnp.full_like(problem["model"], 1e3)
+        state = parts.init_fn(far, jr.key(0))
+        population, _ = parts.ask_fn(far, state, jr.key(1))
+        assert population.shape == (64, *problem["model"].shape)
+        assert bool(jnp.all((population >= 0.0) & (population < 1.0)))
+
+    def test_sampler_hyperparameters_reach_the_draws(self, problem):
+        # ``relative_normal`` reads the model's values: member 0 is the
+        # model itself.
+        parts = optimizer_parts(
+            OptimizationStep(
+                optimizer="randomsearch",
+                hyperparameters={
+                    "sampler": "relative_normal",
+                    "popsize": 3,
+                },
+            ),
+            **problem,
+        )
+        state = parts.init_fn(problem["model"], jr.key(0))
+        population, _ = parts.ask_fn(
+            jnp.full_like(problem["model"], 7.0), state, jr.key(1)
+        )
+        assert bool(jnp.all(population[0] == problem["model"]))
+
+    def test_tell_learns_nothing(self, problem):
+        parts = optimizer_parts(
+            OptimizationStep(optimizer="randomsearch"), **problem
+        )
+        state = parts.init_fn(problem["model"], jr.key(0))
+        population, state = parts.ask_fn(problem["model"], state, jr.key(1))
+        fitness = jax.vmap(problem["loss_fn"])(population)
+        assert parts.tell_fn(state, population, fitness, jr.key(2)) == state
+
+    def test_carries_no_scale_and_takes_none(self, problem):
+        parts = optimizer_parts(
+            OptimizationStep(optimizer="randomsearch"), **problem
+        )
+        state = parts.init_fn(problem["model"], jr.key(0))
+        _, conf = parts.transfer_read_fn(state)
+        assert float(conf) == 0.0
+        assert not parts.own_ask
 
 
 class TestUnresolvableName:
@@ -309,6 +357,13 @@ class TestUnresolvableName:
                 )
         finally:
             OPTIMIZER_REGISTRY.pop(name, None)
+
+    @pytest.mark.parametrize("name", sorted(PLAIN_RUN_OPTIMIZERS))
+    def test_plain_run_optimizers_are_refused(self, name, problem):
+        """Every name the public set lists is one optimizer_parts refuses,
+        so a menu built by leaving them out never holds a refused entry."""
+        with pytest.raises(ValueError, match="plain registry entry"):
+            optimizer_parts(OptimizationStep(optimizer=name), **problem)
 
     def test_unregistered_name_raises_earlier(self, problem):
         with pytest.raises(ValueError, match="not recognized"):

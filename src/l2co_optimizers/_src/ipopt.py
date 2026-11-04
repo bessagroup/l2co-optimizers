@@ -3,9 +3,9 @@ IPOPT as a plain-run ``UpdateClass`` entry, through casadi (ADR 0003).
 
 The registry entry ``"ipopt"`` runs IPOPT (Wächter & Biegler), a
 primal-dual interior-point method with a filter line search, on the
-loss. It uses IPOPT's own limited-memory quasi-Newton Hessian: IPOPT
-needs the Hessian as a matrix, and a dense one from JAX would cost
-``d`` gradients per step.
+loss. By default it uses IPOPT's own limited-memory quasi-Newton
+Hessian. With ``hessian="exact"`` it uses ``jax.hessian`` of the loss
+instead, each Hessian one recorded, billed evaluation (ADR 0007).
 
 IPOPT owns its loop and calls the objective itself, as scipy does, so
 the entry reuses the scipy host-callback machinery unchanged (ADR 0002):
@@ -31,6 +31,11 @@ Three things are specific to IPOPT:
 * **The box is honoured exactly.** ``bound_relax_factor`` is zero, so
   IPOPT never evaluates outside the box, and it starts strictly inside
   it (``bound_push``).
+* **An exact Hessian is handed to casadi whole.** A callback passed as
+  ``nlpsol``'s ``hess_lag`` option returns the upper triangle of
+  ``lam_f * H``, with ``H`` from the driver (:meth:`_Driver.hessian`),
+  once per IPOPT iteration. Letting casadi derive that function from the
+  gradient callback instead costs it ~20 s to build at d = 512 (ADR 0007).
 """
 
 #                                                                       Modules
@@ -82,12 +87,14 @@ def _ipopt_minimize(
     bounds: Any,
     *,
     options: dict[str, Any],
+    exact_hessian: bool = False,
 ) -> np.ndarray:
     """Run IPOPT to its own end on the driver's objective.
 
     Follows the ``Minimizer`` contract of ``scipy_implementations``:
     returns IPOPT's final point, and raises what the driver raised (the
-    budget spent, a non-finite point) once IPOPT has returned.
+    budget spent, a non-finite point) once IPOPT has returned. With
+    ``exact_hessian`` IPOPT gets the driver's exact Hessian.
     """
     import casadi as ca
 
@@ -109,10 +116,58 @@ def _ipopt_minimize(
             latest[key] = out
         return latest[key]
 
+    def hessian(x: np.ndarray) -> np.ndarray:
+        if failure:
+            return np.full((n, n), np.nan)
+        try:
+            return driver.hessian(x)
+        except Exception as error:  # noqa: BLE001 -- re-raised below
+            failure.append(error)
+            return np.full((n, n), np.nan)
+
     # casadi frees a Python callback whose wrapper is garbage-collected,
     # even while a solver still calls it; hold every one until IPOPT
     # returns.
     alive: list[ca.Callback] = []
+
+    class _LagrangianHessian(ca.Callback):
+        """casadi's ``nlp_hess_l``: the upper triangle of ``lam_f * H``.
+
+        Without constraints the Lagrangian is ``lam_f * f``. The inputs
+        are casadi's: ``x``, the (empty) parameters, ``lam_f`` and the
+        (empty) constraint multipliers.
+        """
+
+        def __init__(self):
+            ca.Callback.__init__(self)
+            self.construct("loss_hessian", {})
+
+        def get_n_in(self):
+            return 4
+
+        def get_n_out(self):
+            return 1
+
+        def get_name_in(self, i):
+            return ("x", "p", "lam_f", "lam_g")[i]
+
+        def get_name_out(self, i):
+            return "triu_hess_gamma_x_x"
+
+        def get_sparsity_in(self, i):
+            return (
+                ca.Sparsity.dense(n, 1),
+                ca.Sparsity(0, 0),
+                ca.Sparsity.scalar(),
+                ca.Sparsity(0, 1),
+            )[i]
+
+        def get_sparsity_out(self, i):
+            return ca.Sparsity.upper(n)
+
+        def eval(self, arg):
+            h = float(arg[2]) * hessian(arg[0].full().ravel())
+            return [ca.triu(ca.DM(h))]
 
     class _Gradient(ca.Callback):
         def __init__(self):
@@ -194,6 +249,10 @@ def _ipopt_minimize(
 
     loss, stop = _Loss(), _Stop()
     alive += [loss, stop]
+    second_order = {}
+    if exact_hessian:
+        second_order["hess_lag"] = _LagrangianHessian()
+        alive.append(second_order["hess_lag"])
     x = ca.MX.sym("x", n)
     solver = ca.nlpsol(
         "ipopt",
@@ -208,12 +267,15 @@ def _ipopt_minimize(
             "print_time": False,
             "ipopt.print_level": 0,
             "ipopt.sb": "yes",
-            "ipopt.hessian_approximation": "limited-memory",
+            "ipopt.hessian_approximation": (
+                "exact" if exact_hessian else "limited-memory"
+            ),
             "ipopt.tol": _IPOPT_TOL,
             "ipopt.acceptable_iter": 0,
             "ipopt.max_iter": _UNREACHABLE,
             "ipopt.bound_relax_factor": 0.0,
             **{f"ipopt.{k}": v for k, v in options.items()},
+            **second_order,
         },
     )
     if bounds is None:
@@ -238,16 +300,19 @@ def ipopt_update(
     opt_hash: int,
     bounded: tuple[float | None, float | None] | None = (None, None),
     stop_fn: StopFunction | None = None,
-    limited_memory_max_history: int = 6,
+    hessian: str = "limited-memory",
+    limited_memory_max_history: int | None = None,
     mu_init: float = 0.1,
 ) -> UpdateClass:
     """Construct the ``UpdateClass`` behind ``optimizer="ipopt"``.
 
-    IPOPT, an interior-point method with a filter line search, with its
-    limited-memory quasi-Newton Hessian. Without a box, the barrier is
-    inactive and it is a line-search L-BFGS method with IPOPT's filter
-    and inertia correction. Every value-and-gradient evaluation it asks
-    for is one evaluation.
+    IPOPT, an interior-point method with a filter line search. By
+    default it uses its limited-memory quasi-Newton Hessian: without a
+    box, the barrier is inactive and it is a line-search L-BFGS method
+    with IPOPT's filter and inertia correction. With ``hessian="exact"``
+    it is a Newton method on ``jax.hessian`` of the loss (ADR 0007).
+    Every value-and-gradient evaluation, and every Hessian, it asks for
+    is one evaluation.
 
     Parameters
     ----------
@@ -266,9 +331,12 @@ def ipopt_update(
         or ``None`` on one side, leaves that side unbounded.
     stop_fn : StopFunction or None, optional
         Must be ``None``; see Raises.
-    limited_memory_max_history : int, optional
-        Correction pairs kept by the quasi-Newton Hessian; IPOPT's
-        default ``6``.
+    hessian : str, optional
+        ``"limited-memory"`` (default) or ``"exact"``: ``jax.hessian``
+        of the loss, taken on the sample the point was evaluated with.
+    limited_memory_max_history : int or None, optional
+        Correction pairs kept by the quasi-Newton Hessian; ``None``
+        means IPOPT's default ``6``. Limited-memory only.
     mu_init : float, optional
         Initial barrier parameter; IPOPT's default ``0.1``. Used only
         with a box.
@@ -282,15 +350,31 @@ def ipopt_update(
     Raises
     ------
     ValueError
-        If ``stop_fn`` is not ``None``.
+        If ``stop_fn`` is not ``None``, ``hessian`` is neither
+        ``"limited-memory"`` nor ``"exact"``, or
+        ``limited_memory_max_history`` is given with ``"exact"``.
     """
+    if hessian not in ("limited-memory", "exact"):
+        raise ValueError(
+            f"Unknown ipopt hessian {hessian!r}; expected 'limited-memory' "
+            "or 'exact'."
+        )
+    exact = hessian == "exact"
+    if exact and limited_memory_max_history is not None:
+        raise ValueError(
+            "limited_memory_max_history configures IPOPT's limited-memory "
+            "Hessian; hessian='exact' does not use it."
+        )
+    options: dict[str, Any] = {"mu_init": mu_init}
+    if not exact:
+        options["limited_memory_max_history"] = (
+            6
+            if limited_memory_max_history is None
+            else limited_memory_max_history
+        )
     return _scipy_update(
         functools.partial(
-            _ipopt_minimize,
-            options=dict(
-                limited_memory_max_history=limited_memory_max_history,
-                mu_init=mu_init,
-            ),
+            _ipopt_minimize, options=options, exact_hessian=exact
         ),
         name="ipopt",
         family=FAMILY_GRADIENT,
@@ -301,6 +385,7 @@ def ipopt_update(
         opt_hash=opt_hash,
         bounded=bounded,
         stop_fn=stop_fn,
+        with_hessian=exact,
     )
 
 

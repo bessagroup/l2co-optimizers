@@ -8,13 +8,19 @@ The whole public surface is the flat `l2co_optimizers` namespace. It holds what 
 
 ::: l2co_optimizers.register_optimizer
 
+### Constraint handling
+
+Each registry entry declares how far it can enforce constraints: `CONSTRAINTS_NONE` (`"none"`, candidates are only clipped to `bounded`), `CONSTRAINTS_BOX` (`"box"`, the optimizer keeps its own state inside the box) or `CONSTRAINTS_GENERAL` (`"general"`, the solver also takes inequality and equality constraints, which nothing passes it yet). `CONSTRAINT_HANDLING_LEVELS` lists them weakest first. `register_optimizer` takes the level as `constraint_handling=` ([ADR 0008](https://github.com/bessagroup/l2co-optimizers/blob/develop/docs/adr/0008-constraint-handling-per-registry-entry.md)).
+
+::: l2co_optimizers.constraint_handling
+
 ::: l2co_optimizers.UpdateClass
 
 ::: l2co_optimizers.create_schedules_experimentdata
 
 ### Per-library registries
 
-`optimizers` is the merge of one name -> factory dict per library. The ones l2co groups its plot categories by are exported on their own: `optax_mapping`, `normalized_evosax` (the normalized-name -> evosax class table), `normalized_optax_normal`, `lbfgs_mapping`, `shade_mapping`, `turbo_mapping` and `rbf_trust_region_mapping`. The optimistix minimisers (`bfgs`, `dfp`, `nonlinearcg`, `neldermead`) are reached by name only; their mapping stays private. They are plain-run entries: `optimizer_parts` refuses them, so they cannot sit in a switching menu ([ADR 0001](https://github.com/bessagroup/l2co-optimizers/blob/develop/docs/adr/0001-optimistix-minimisers-as-plain-run-entries.md)). The scipy minimisers (`cobyqa`, `powell`, `tnc`, `trustkrylov`) are the same: reached by name only, with a private mapping, and refused by `optimizer_parts`. They run their whole budget in one host callback, and `cobyqa` and `powell` hold the `FAMILY_DERIVATIVE_FREE` family ([ADR 0002](https://github.com/bessagroup/l2co-optimizers/blob/develop/docs/adr/0002-scipy-minimisers-as-whole-run-callback-entries.md)).
+`optimizers` is the merge of one name -> factory dict per library. The ones l2co groups its plot categories by are exported on their own: `optax_mapping`, `normalized_evosax` (the normalized-name -> evosax class table), `normalized_optax_normal`, `lbfgs_mapping`, `shade_mapping`, `turbo_mapping` and `rbf_trust_region_mapping`. The optimistix minimisers (`bfgs`, `dfp`, `nonlinearcg`, `neldermead`) are reached by name only; their mapping stays private. They are plain-run entries: `optimizer_parts` refuses them, so they cannot sit in a switching menu ([ADR 0001](https://github.com/bessagroup/l2co-optimizers/blob/develop/docs/adr/0001-optimistix-minimisers-as-plain-run-entries.md)). The scipy minimisers (`cobyqa`, `cobyla`, `powell`, `tnc`, `trustkrylov`, `slsqp`, `trustconstr`) are the same: reached by name only, with a private mapping, and refused by `optimizer_parts`. They run their whole budget in one host callback, and `cobyqa`, `cobyla` and `powell` hold the `FAMILY_DERIVATIVE_FREE` family ([ADR 0002](https://github.com/bessagroup/l2co-optimizers/blob/develop/docs/adr/0002-scipy-minimisers-as-whole-run-callback-entries.md)). scipy's `lbfgsb` is reached by name only too, but it is stepped one evaluation at a time, so `optimizer_parts` unpacks it into `GradientParts` ([ADR 0011](https://github.com/bessagroup/l2co-optimizers/blob/develop/docs/adr/0011-plain-run-entries-that-can-be-stepped-join-switching-menus.md)).
 
 ## Running an optimizer
 

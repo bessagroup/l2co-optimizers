@@ -29,6 +29,12 @@ and ``batch_size``; turning an ``l2co_tasks.Task`` into those is
 
 # Local
 from l2co_optimizers._src.core.batching import BatchState
+from l2co_optimizers._src.core.constraint_handling import (
+    CONSTRAINT_HANDLING_LEVELS,
+    CONSTRAINTS_BOX,
+    CONSTRAINTS_GENERAL,
+    CONSTRAINTS_NONE,
+)
 from l2co_optimizers._src.core.experimentdata import (
     create_schedules_experimentdata,
 )
@@ -63,6 +69,7 @@ from l2co_optimizers._src.core.sampler import (
     grid_sampling,
     normal_sampling,
     random_sampling,
+    relative_normal_sampling,
     xavier_sampling,
 )
 from l2co_optimizers._src.core.state_transfer import (
@@ -76,6 +83,11 @@ from l2co_optimizers._src.core.state_transfer import (
     FAMILY_POPULATION,
     TransferBundle,
     build_transfer_fns,
+)
+from l2co_optimizers._src.core.switch_ports import (
+    Shape,
+    SwitchPorts,
+    build_switch_ports,
 )
 from l2co_optimizers._src.core.typing import (
     AskFunction,
@@ -100,6 +112,7 @@ from l2co_optimizers._src.core.utils import normalize_key
 from l2co_optimizers._src.evosax_implementations import normalized_evosax
 from l2co_optimizers._src.lbfgs import lbfgs_mapping
 from l2co_optimizers._src.mapping import (
+    constraint_handling,
     optimizer_mapping,
     optimizers,
     register_optimizer,
@@ -110,6 +123,7 @@ from l2co_optimizers._src.optax_implementations import (
     step_fevals,
 )
 from l2co_optimizers._src.optimizer_parts import (
+    PLAIN_RUN_OPTIMIZERS,
     GradientParts,
     PopulationParts,
     optimizer_parts,
@@ -130,6 +144,10 @@ __all__ = [
     "CONF_ABSENT",
     "CONF_ESTIMATED",
     "CONF_EXACT",
+    "CONSTRAINT_HANDLING_LEVELS",
+    "CONSTRAINTS_BOX",
+    "CONSTRAINTS_GENERAL",
+    "CONSTRAINTS_NONE",
     "FAMILIES",
     "FAMILY_DERIVATIVE_FREE",
     "FAMILY_DISTRIBUTION",
@@ -148,20 +166,25 @@ __all__ = [
     "OptState",
     "OptimizationStep",
     "PopSize",
+    "PLAIN_RUN_OPTIMIZERS",
     "PopulationParts",
     "RecentHistory",
     "RunResult",
     "RunState",
     "SamplerFunction",
+    "Shape",
     "StepFunction",
     "StopFunction",
+    "SwitchPorts",
     "TransferBundle",
     "TransferReadFunction",
     "TransferWriteFunction",
     "UpdateClass",
     "batch_evaluate",
     "batch_reset",
+    "build_switch_ports",
     "build_transfer_fns",
+    "constraint_handling",
     "constant_sampling",
     "count_parameters",
     "create_schedules_experimentdata",
@@ -178,6 +201,7 @@ __all__ = [
     "optimizer_parts",
     "optimizers",
     "random_sampling",
+    "relative_normal_sampling",
     "rbf_trust_region_mapping",
     "register_optimizer",
     "register_schedule_namer",
