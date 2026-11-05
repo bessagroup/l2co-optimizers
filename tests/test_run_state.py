@@ -173,7 +173,13 @@ def test_reset_keeps_the_best_of_the_fresh_sample(step):
         jr.key(4),
     )
 
-    losses = jax.vmap(problem["loss_fn"])(reset_state.params)
+    # The best is taken over the sampler's draws. For the distribution
+    # family the returned population is the method's own first generation
+    # instead (spec decision 17), so compare against the draws.
+    draws = normal_sampling(
+        jr.key(4), run_state.best_params, run_state.update_class.popsize
+    )
+    losses = jax.vmap(problem["loss_fn"])(draws)
     assert float(reset_state.best_loss) == pytest.approx(
         float(jnp.min(losses))
     )
@@ -181,6 +187,98 @@ def test_reset_keeps_the_best_of_the_fresh_sample(step):
         float(problem["loss_fn"](reset_state.best_params))
     )
     assert reset_state.update_class is run_state.update_class
+
+
+#                                    first generation by family (decision 17)
+# =============================================================================
+
+
+def _reset(step: OptimizationStep, key):
+    problem = sphere_problem(DIM)
+    run_state = _init(step, problem)
+    static = eqx.filter(problem["model"], eqx.is_inexact_array, inverse=True)
+    reset_state = reset(
+        run_state,
+        _batch_state(),
+        static,
+        {},
+        problem["loss_fn"],
+        problem["pass_rng"],
+        normal_sampling,
+        key,
+    )
+    draws = normal_sampling(
+        key, run_state.best_params, run_state.update_class.popsize
+    )
+    return run_state, reset_state, draws
+
+
+_DISTRIBUTION_STEPS = [
+    OptimizationStep(optimizer="cmaes", hyperparameters={"popsize": 4}),
+    OptimizationStep(optimizer="sepcmaes", hyperparameters={"popsize": 4}),
+    OptimizationStep(optimizer="openes", hyperparameters={"popsize": 4}),
+]
+
+
+@pytest.mark.parametrize(
+    "step", _DISTRIBUTION_STEPS, ids=[s.optimizer for s in _DISTRIBUTION_STEPS]
+)
+def test_reset_gives_distribution_methods_their_own_first_generation(step):
+    """The first generation is the method's own draw around x0.
+
+    x0 is the sampler's first draw, so it stays common to every
+    optimizer. The distribution's mean starts there, and the first
+    population evaluated is ``ask_fn`` on the initialised state, not the
+    sampler's draws (spec decision 17).
+    """
+    key = jr.key(4)
+    run_state, reset_state, draws = _reset(step, key)
+    update_class = run_state.update_class
+    init_state = update_class.init_state(
+        params=draws, batch_state=_batch_state(), dataset={}, key=key
+    )
+    expected, _ = update_class.ask_fn(init_state, jr.fold_in(key, 1))
+    np.testing.assert_array_equal(reset_state.params, expected)
+    assert not np.allclose(reset_state.params, draws)
+    np.testing.assert_array_equal(reset_state.opt_state.mean, draws[0])
+
+
+_OTHER_STEPS = [
+    OptimizationStep(
+        optimizer="adam", hyperparameters={"learning_rate": 0.05}
+    ),
+    OptimizationStep(optimizer="pso", hyperparameters={"popsize": 4}),
+    OptimizationStep(
+        optimizer="differentialevolution", hyperparameters={"popsize": 4}
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "step", _OTHER_STEPS, ids=[s.optimizer for s in _OTHER_STEPS]
+)
+def test_reset_keeps_the_sampler_draws_outside_the_distribution_family(step):
+    """Population and gradient methods start from the sampler's draws."""
+    _, reset_state, draws = _reset(step, jr.key(4))
+    np.testing.assert_array_equal(reset_state.params, draws)
+
+
+def test_every_distribution_entry_can_draw_its_first_generation():
+    """``reset`` needs ``ask_fn`` for every distribution-family optimizer."""
+    from l2co_optimizers._src.core.state_transfer import FAMILY_DISTRIBUTION
+    from l2co_optimizers._src.mapping import optimizers
+
+    problem = sphere_problem(DIM)
+    seen = 0
+    for name, factory in optimizers.items():
+        try:
+            update_class = factory(**problem, opt_hash=1, bounded=(None, None))
+        except TypeError:
+            continue  # needs a required hyperparameter (e.g. a gradient lr)
+        if update_class.family == FAMILY_DISTRIBUTION:
+            seen += 1
+            assert update_class.ask_fn is not None, name
+    assert seen > 0
 
 
 #                                                       run / batch_evaluate

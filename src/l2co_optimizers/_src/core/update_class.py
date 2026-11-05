@@ -409,7 +409,11 @@ class UpdateClass(eqx.Module):
         )
         init_done = jnp.array(False)
 
-        n = n_iterations + 1
+        # Exactly ``n_iterations`` steps, every one recorded and charged
+        # (spec O7, 2026-11-04). The loop used to take one extra leading
+        # step whose evaluation of the starting points the optimizer used
+        # but the history dropped, so it was never charged.
+        n = n_iterations
 
         # Reduce each generation in place (``_reduce_entry``) instead of
         # stacking the full ``(n, popsize, dim)`` population/gradient
@@ -466,9 +470,9 @@ class UpdateClass(eqx.Module):
         carry, best_params, best_loss, params = final_ext
         _, opt_state, _, batch_state, _, _ = carry
 
-        # Drop the leading sentinel iteration (parity with the legacy
-        # ``history[1:]`` slice) before assembling the reduced HistoryState.
-        stats = tuple(None if s is None else s[1:] for s in stats)
+        # Every step is recorded: the first step's evaluation of the
+        # starting points is the first history entry. The seventh entry is
+        # None for a noise-free task (no ``true_loss_fn``).
         history_state = HistoryState.from_reduced(*stats)
 
         return (
@@ -627,7 +631,11 @@ class UpdateClass(eqx.Module):
 
         batch_state = _broadcast_batch_state(batch_state, n_realizations)
 
-        n = n_iterations + 1
+        # Exactly ``n_iterations`` steps, every one recorded and charged
+        # (spec O7, 2026-11-04). The loop used to take one extra leading
+        # step whose evaluation of the starting points the optimizer used
+        # but the history dropped, so it was never charged.
+        n = n_iterations
 
         # Per-realization running-best / last-evaluated-population seeds;
         # see :meth:`run` for the reduce-in-scan rationale. ``params[:, 0]``
@@ -680,13 +688,14 @@ class UpdateClass(eqx.Module):
         carry, best_params, best_loss, params = final_ext
         _, opt_state, _, batch_state, _, _ = carry
 
-        # ``stats`` leaves are (n_iter, n_realizations); drop the leading
-        # sentinel iteration and move realization to the front so
-        # ``from_reduced`` (vmapped over realizations) sees canonical
-        # (n_iter,) fields. This transpose is on scalar-per-step arrays,
-        # not the (n, popsize, dim) trajectory the legacy swapaxes copied.
+        # ``stats`` leaves are (n_iter, n_realizations); move realization to
+        # the front so ``from_reduced`` (vmapped over realizations) sees
+        # canonical (n_iter,) fields. Every step is recorded, including the
+        # first. This transpose is on scalar-per-step arrays, not the
+        # (n, popsize, dim) trajectory the legacy swapaxes copied. The
+        # noise-free entry is None for a noise-free task and stays None.
         stats = tuple(
-            None if s is None else jnp.swapaxes(s[1:], 0, 1) for s in stats
+            None if s is None else jnp.swapaxes(s, 0, 1) for s in stats
         )
         history_state = jax.vmap(HistoryState.from_reduced)(*stats)
 
