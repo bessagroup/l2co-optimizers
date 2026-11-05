@@ -69,6 +69,7 @@ from l2co_optimizers._src.core.typing import (
 )
 from l2co_optimizers._src.core.update_class import UpdateClass
 from l2co_optimizers._src.core.utils import normalize_key
+from l2co_optimizers._src.plain_values import split_evosax_hyperparameters
 
 #                                                          Authorship & Credits
 # =============================================================================
@@ -404,7 +405,11 @@ def evosax_distribution_update(
         underlying constructor. Defaults to ``""``, which resolves
         to the family default.
     **hyperparameters
-        Override fields on ``optimizer.default_params``.
+        Override fields on ``optimizer.default_params``. Two plain values
+        go to the constructor instead (spec O10, see
+        :mod:`~l2co_optimizers._src.plain_values`): ``std_schedule`` (a
+        number, made a constant schedule) and, for ARS, ASEBO, NRES and
+        PES, ``learning_rate`` (the inner Adam's rate).
 
     Returns
     -------
@@ -414,7 +419,14 @@ def evosax_distribution_update(
     popsize = resolve_popsize(popsize, model)
     params, static = eqx.partition(model, eqx.is_inexact_array)
 
-    optimizer = optimizer(population_size=popsize, solution=params)
+    # Plain std_schedule / inner learning_rate values go to the constructor
+    # as the objects evosax expects (spec O10); the rest are parameters.
+    constructor_kwargs, hyperparameters = split_evosax_hyperparameters(
+        name, optimizer, hyperparameters
+    )
+    optimizer = optimizer(
+        population_size=popsize, solution=params, **constructor_kwargs
+    )
     es_params = optimizer.default_params.replace(**hyperparameters)
 
     init_fn, step_fn = evosax_distribution_based_fn(
@@ -498,7 +510,11 @@ def evosax_population_update(
         underlying constructor. Defaults to ``""``, which resolves
         to the family default.
     **hyperparameters
-        Override fields on ``optimizer.default_params``.
+        Override fields on ``optimizer.default_params``. Two plain values
+        go to the constructor instead (spec O10, see
+        :mod:`~l2co_optimizers._src.plain_values`): ``std_schedule`` (a
+        number, made a constant schedule) and, for ARS, ASEBO, NRES and
+        PES, ``learning_rate`` (the inner Adam's rate).
 
     Returns
     -------
@@ -508,7 +524,14 @@ def evosax_population_update(
     popsize = resolve_popsize(popsize, model)
     params, static = eqx.partition(model, eqx.is_inexact_array)
 
-    optimizer = optimizer(population_size=popsize, solution=params)
+    # Plain std_schedule / inner learning_rate values go to the constructor
+    # as the objects evosax expects (spec O10); the rest are parameters.
+    constructor_kwargs, hyperparameters = split_evosax_hyperparameters(
+        name, optimizer, hyperparameters
+    )
+    optimizer = optimizer(
+        population_size=popsize, solution=params, **constructor_kwargs
+    )
     es_params = optimizer.default_params.replace(**hyperparameters)
 
     init_fn, step_fn = evosax_population_based_fn(
