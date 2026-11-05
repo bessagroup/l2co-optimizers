@@ -131,11 +131,12 @@ def test_run_returns_the_documented_contract(name, hyper):
     assert history.output_min.shape == (N_ITERATIONS,)
     assert int(history.cursor) == N_ITERATIONS
     assert bool(jnp.all(history.update_step == 7))
-    # The running best is the best member ever evaluated, which is at
-    # most the best per-generation minimum the history records (the
-    # leading sentinel generation is dropped from the history but can
-    # still hold the best).
-    assert float(best_loss) <= float(jnp.nanmin(history.output_min)) + 1e-6
+    # The running best is the best member ever evaluated. Every step is
+    # recorded (spec O7), so it equals the best per-generation minimum
+    # in the history: no unrecorded step can hold a better point.
+    assert float(best_loss) == pytest.approx(
+        float(jnp.nanmin(history.output_min)), rel=1e-6
+    )
     assert float(best_loss) == pytest.approx(
         float(sphere_problem(DIM)["loss_fn"](best_params)), rel=1e-5
     )
