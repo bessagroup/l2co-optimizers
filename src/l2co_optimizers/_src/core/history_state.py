@@ -221,15 +221,15 @@ class HistoryState(eqx.Module):
         guaranteed by construction in current callers (rl2co allocates
         ``HistoryState.init(max_iterations + 1)``).
 
-        Parameters
-        ----------
-        other : HistoryState
-            HistoryState whose entries are appended at the cursor.
-
         The noise-free series stays ``None`` while neither side has one.
         Once either does, a part without one contributes its observed
         ``output_min`` there: rl2co fills one history from several runs,
         and its episode's first entry has no noise-free value.
+
+        Parameters
+        ----------
+        other : HistoryState
+            HistoryState whose entries are appended at the cursor.
 
         Returns
         -------
