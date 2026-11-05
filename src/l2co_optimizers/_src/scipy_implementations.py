@@ -627,6 +627,12 @@ class ScipyUpdateClass(UpdateClass):
             history_state)``, as :meth:`UpdateClass.run`. ``params`` is
             the last evaluated point, with a population axis of one.
         """
+        if self.true_loss_fn is not None:
+            raise NotImplementedError(
+                "The whole-run scipy entries cannot record a noise-free "
+                "series (spec decision 12): run them on noise-free tasks "
+                "only, or leave true_loss_fn unset."
+            )
         del verbose
         x0, unravel = ravel_pytree(jax.tree.map(lambda p: p[0], params))
         dtype = x0.dtype

@@ -60,6 +60,13 @@ class HistoryState(eqx.Module):
     cursor : Int[Array, ""]
         Index of the next write position; equals the number of filled
         slots. The most-recent valid entry lives at ``cursor - 1``.
+    output_min_true : Float[Array, " n_iterations"] or None
+        Lowest *noise-free* loss over each iteration's evaluated
+        population, for a task whose loss is noisy (spec decision 12 of
+        the dataset paper's protocol revision: noisy tasks are scored on
+        the noise-free value). ``None`` (the default) means the task is
+        noise-free, so ``output_min`` already is the noise-free value. Set
+        by the run loop when the ``UpdateClass`` has a ``true_loss_fn``.
     """
 
     output_min: Float[Array, " n_iterations"]
@@ -69,6 +76,7 @@ class HistoryState(eqx.Module):
     fevals: Int[Array, " n_iterations"]
     iterations: Int[Array, " n_iterations"]
     cursor: Int[Array, ""]
+    output_min_true: Float[Array, " n_iterations"] | None = None
 
     @classmethod
     def init(cls, max_iterations: int) -> HistoryState:
@@ -152,6 +160,7 @@ class HistoryState(eqx.Module):
         update_step: Int[Array, " n_iterations"],
         fevals: Int[Array, " n_iterations"],
         iterations: Int[Array, " n_iterations"],
+        output_min_true: Float[Array, " n_iterations"] | None = None,
     ) -> HistoryState:
         """Build a HistoryState from already-reduced per-iteration fields.
 
@@ -177,6 +186,9 @@ class HistoryState(eqx.Module):
         update_step, fevals, iterations : Int[Array, " n_iterations"]
             Per-iteration integer counters (non-cumulative; the cumulative
             sums are applied on export, see ``l2co.history_to_xarray``).
+        output_min_true : Float[Array, " n_iterations"] or None, optional
+            Per-iteration lowest noise-free loss, for a noisy task. ``None``
+            (the default) for a noise-free one.
 
         Returns
         -------
@@ -191,6 +203,7 @@ class HistoryState(eqx.Module):
             fevals=fevals,
             iterations=iterations,
             cursor=jnp.array(output_min.shape[0], dtype=int),
+            output_min_true=output_min_true,
         )
 
     def add(self, other: HistoryState) -> HistoryState:
@@ -213,6 +226,11 @@ class HistoryState(eqx.Module):
         other : HistoryState
             HistoryState whose entries are appended at the cursor.
 
+        The noise-free series stays ``None`` while neither side has one.
+        Once either does, a part without one contributes its observed
+        ``output_min`` there: rl2co fills one history from several runs,
+        and its episode's first entry has no noise-free value.
+
         Returns
         -------
         HistoryState
@@ -224,6 +242,18 @@ class HistoryState(eqx.Module):
         def write(a, b):
             return jax.lax.dynamic_update_slice(a, b, (cursor,))
 
+        if self.output_min_true is None and other.output_min_true is None:
+            output_min_true = None
+        else:
+            output_min_true = write(
+                self.output_min
+                if self.output_min_true is None
+                else self.output_min_true,
+                other.output_min
+                if other.output_min_true is None
+                else other.output_min_true,
+            )
+
         return HistoryState(
             output_min=write(self.output_min, other.output_min),
             output_mean=write(self.output_mean, other.output_mean),
@@ -232,4 +262,5 @@ class HistoryState(eqx.Module):
             fevals=write(self.fevals, other.fevals),
             iterations=write(self.iterations, other.iterations),
             cursor=cursor + other.output_min.shape[0],
+            output_min_true=output_min_true,
         )
