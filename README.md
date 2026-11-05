@@ -249,7 +249,7 @@ The four optimistix entries are `bfgs`, `dfp`, `nonlinearcg` and `neldermead`. T
 
 Seven scipy entries (`cobyqa`, `cobyla`, `powell`, `tnc`, `trustkrylov`, `slsqp`, `trustconstr`) are plain registry entries too, for a different reason: scipy owns the optimization loop, so each run hands its whole budget to `scipy.optimize.minimize` inside one host callback. One iteration is one evaluation (value, or value and gradient), billed one. When scipy finishes before the budget, every remaining iteration re-evaluates its final point; if scipy fails, the run stays at the best point found. A `stop_fn` raises. See [ADR 0002](docs/adr/0002-scipy-minimisers-as-whole-run-callback-entries.md), [ADR 0003](docs/adr/0003-nlp-solvers-as-host-callback-entries.md) for SLSQP and trust-constr, and [ADR 0009](docs/adr/0009-cobyla-as-a-constrained-derivative-free-baseline.md) for COBYLA. COBYLA takes a box as constraints it may cross on the way: a point it proposes outside the box is evaluated at its projection into the box.
 
-The eighth, `lbfgsb` (scipy's L-BFGS-B), is stepped one evaluation at a time instead: scipy's Fortran routine hands control back after every evaluation, so its workspace rides in the scan carry, as `uint32` bits in both x64 modes. One transform backs the registry entry and `optimizer_parts`, so `lbfgsb` can join a switching menu and honours a `stop_fn`. It keeps the whole-run rules: one evaluation per step, billed one; its final point is re-evaluated to the budget; a failure ends the run at the best point; the box is handed to scipy (a switched `lbfgsb` runs unbounded, as the parts path has no bounds channel yet). Its first evaluation is the run loop's unrecorded sentinel, as for every gradient entry, so its history is the old whole-run one shifted by one evaluation. See [ADR 0006](docs/adr/0006-l-bfgs-b-as-a-named-baseline.md) and [ADR 0011](docs/adr/0011-plain-run-entries-that-can-be-stepped-join-switching-menus.md).
+The eighth, `lbfgsb` (scipy's L-BFGS-B), is stepped one evaluation at a time instead: scipy's Fortran routine hands control back after every evaluation, so its workspace rides in the scan carry, as `uint32` bits in both x64 modes. One transform backs the registry entry and `optimizer_parts`, so `lbfgsb` can join a switching menu and honours a `stop_fn`. It keeps the whole-run rules: one evaluation per step, billed one; its final point is re-evaluated to the budget; a failure ends the run at the best point; the box is handed to scipy (a switched `lbfgsb` runs unbounded, as the parts path has no bounds channel yet). The run loop records every step, its first evaluation at x0 included, so its history is the old whole-run one, step for step. See [ADR 0006](docs/adr/0006-l-bfgs-b-as-a-named-baseline.md) and [ADR 0011](docs/adr/0011-plain-run-entries-that-can-be-stepped-join-switching-menus.md).
 
 `ipopt` runs the same way, on the same driver, through casadi, whose wheels bundle IPOPT. IPOPT uses its own limited-memory quasi-Newton Hessian, and a value request and a gradient request at the same point are one evaluation. See [ADR 0003](docs/adr/0003-nlp-solvers-as-host-callback-entries.md). With `hessian="exact"`, `ipopt` and `trustconstr` use `jax.hessian` of the loss instead, taken on the sample its point was evaluated with; each Hessian is one billed evaluation. A loss computed outside JAX must supply its own Hessian (l2co-tasks ADR 0005). See [ADR 0007](docs/adr/0007-exact-hessians-for-ipopt-and-trustconstr.md).
 
@@ -281,12 +281,14 @@ Hydra merges a group's options across search paths. So an application can keep i
 
 ## Releases
 
-Up to `l2co` 1.6.0 the sibling packages declared each other unpinned, so nothing enforced compatibility between releases. From 1.7.0, `l2co` declares `l2co-optimizers>=0.3.0`. The pairs:
+Up to `l2co` 1.6.0 the sibling packages declared each other unpinned, so nothing enforced compatibility between releases. From 1.7.0, `l2co` declares a minimum (`l2co-optimizers>=0.3.0`; 2.0.0 declares `>=0.5.0`). The pairs:
 
 | `l2co` | `l2co-optimizers` |
 | --- | --- |
 | 1.6.0 | 0.1.0 only |
 | 1.7.0 | 0.3.0 or later |
+| 1.8.0, 1.8.1 | 0.4.0 (declared `>=0.4.0`; not checked against 0.5.0) |
+| 2.0.0 | 0.5.0 or later |
 
 **`l2co` 1.6.0 does not import with `l2co-optimizers` 0.2.0**, which an unpinned install now picks. 0.2.0 no longer exports 37 names that `l2co` 1.6.0 imports: the switching layer (`SubOpt`, the handshake policy) moved into `l2co` (l2co ADR 0019), and the per-library factories became private. With `l2co` 1.6.0, install `l2co-optimizers==0.1.0`.
 

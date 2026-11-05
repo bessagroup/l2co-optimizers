@@ -70,6 +70,10 @@ from l2co_optimizers._src.optimistix_implementations import (
     OPTIMISTIX_OPTIMIZERS,
     solver_transform,
 )
+from l2co_optimizers._src.plain_values import (
+    resolve_named_learning_rate,
+    split_evosax_hyperparameters,
+)
 from l2co_optimizers._src.random_search import (
     RANDOM_SEARCH_OPTIMIZERS,
     random_search_sampling_fn,
@@ -406,13 +410,17 @@ def optimizer_parts(
             optax_cls = normalized_optax_from_state[name]
         else:
             optax_cls = l2co_native_optax[name]
+        # Same conversion as the optax factories (spec O10).
+        hyperparams, transfer_hyperparams = resolve_named_learning_rate(
+            name, hyperparams
+        )
         transform = optax_cls(**hyperparams)
         bound_fn = LINESEARCH_FEVAL_BOUND.get(name)
         # Same builder the ``UpdateClass`` path calls, from the same
         # hyperparameters, so a deployed policy reads and writes scale
         # exactly as the training environment did.
         read_fn, write_fn = build_transfer_fns(
-            name, FAMILY_GRADIENT, hyperparams
+            name, FAMILY_GRADIENT, transfer_hyperparams
         )
         switch_ports = build_switch_ports(name, FAMILY_GRADIENT)
         return GradientParts(
@@ -475,6 +483,12 @@ def optimizer_parts(
             for kwarg in CONSTRUCTOR_HYPERPARAMETERS.get(name, ())
             if kwarg in hyperparams
         }
+        # Plain std_schedule / inner learning_rate values, converted as in
+        # the evosax factories (spec O10).
+        plain_kwargs, hyperparams = split_evosax_hyperparameters(
+            name, algo_cls, hyperparams
+        )
+        constructor_kwargs.update(plain_kwargs)
         # evosax wants ``solution`` to infer per-candidate shape;
         # ``model``'s trainable arrays are the standard template
         # (matching ``RunState.init``).

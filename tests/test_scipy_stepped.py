@@ -10,10 +10,9 @@ A. **Replay.** Handed the evaluations scipy's own ``minimize`` loop
    bitwise -- the plumbing (workspace packing, the request loop, the
    evaluation cache, the idle phase) adds nothing.
 B. **End to end.** A run evaluates the points the whole-run driver
-   (:mod:`tests.whole_run_reference`) evaluates, bitwise. The run loop's
-   first step is its unrecorded sentinel, as for every gradient entry,
-   so the stepped history is the whole-run one shifted by one
-   evaluation.
+   (:mod:`tests.whole_run_reference`) evaluates, bitwise. The run loop
+   records every step, the first one included (spec O7), so the stepped
+   history is the whole-run one, step for step.
 
 Then the behaviour ADR 0002 fixed, which the stepped entry keeps
 (billing, the idle phase, failure, NaN, bounds), what stepping adds
@@ -280,9 +279,9 @@ def _level_b(loss_fn, dim, bounded=(None, None), n=600, **hp):
         n,
         params=params,
     )
-    # The run loop's sentinel step evaluates x0 unrecorded, so stepped
-    # entry i is whole-run entry i + 1.
-    np.testing.assert_array_equal(_losses(stepped)[:-1], _losses(whole)[1:])
+    # Every step of the run loop is recorded, the evaluation of x0
+    # included, so stepped entry i is whole-run entry i.
+    np.testing.assert_array_equal(_losses(stepped), _losses(whole))
     assert float(stepped[2]) <= float(whole[2])
 
 
@@ -341,14 +340,14 @@ def test_each_step_is_one_real_evaluation():
     out = _run(_build(_counting(_wavy, calls)), n)
     jax.effects_barrier()
     history = out[5]
-    # n recorded steps after the unrecorded sentinel.
-    assert len(calls) == n + 1
+    # n steps, every one recorded: no hidden leading step (spec O7).
+    assert len(calls) == n
     assert int(history.cursor) == n
     np.testing.assert_array_equal(np.asarray(history.fevals), 1)
     np.testing.assert_array_equal(np.asarray(history.update_step), 7)
     np.testing.assert_allclose(
         _losses(out),
-        [float(_wavy(jnp.asarray(c))) for c in calls[1:]],
+        [float(_wavy(jnp.asarray(c))) for c in calls],
         rtol=1e-6,
     )
 

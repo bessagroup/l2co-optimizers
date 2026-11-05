@@ -21,6 +21,8 @@ built-ins (``lbfgs_update``, ``shade_update``, ``random_search_update``,
 # Standard
 from __future__ import annotations
 
+import copy
+from collections.abc import Callable
 from typing import ClassVar
 
 # Third-party
@@ -172,6 +174,18 @@ class UpdateClass(eqx.Module):
         per realization -- the meta-optimizers, whose step picks a
         sub-optimizer from a menu. Read by :meth:`batch_run`, which is
         where the consequences are spelled out.
+    true_loss_fn : Callable or None
+        The task's *noise-free* loss for one population member: called
+        on one member's (unbatched) parameters, the same pytree the run
+        evaluates, it returns a scalar. When set, :meth:`run` and
+        :meth:`batch_run` record, per step, the lowest noise-free loss
+        over the evaluated population in
+        ``HistoryState.output_min_true`` (spec decision 12 of the dataset
+        paper's protocol revision). The optimizer never sees it. ``None``
+        (the default) for a noise-free task. l2co, the bridge to tasks,
+        sets it from the task's noise-free loss. For L-BFGS and other
+        line-search entries the evaluated population is the accepted
+        iterate, not every trial point.
     """
 
     #: See the class docstring. A ``ClassVar`` annotation keeps this out
@@ -194,6 +208,35 @@ class UpdateClass(eqx.Module):
         static=True, default=None
     )
     switch_ports: SwitchPorts | None = eqx.field(static=True, default=None)
+    true_loss_fn: Callable[[PyTree], Array] | None = eqx.field(
+        static=True, default=None
+    )
+
+    def with_true_loss_fn(
+        self, true_loss_fn: Callable[[PyTree], Array] | None
+    ) -> UpdateClass:
+        """A copy of this update class with ``true_loss_fn`` set.
+
+        How a caller (l2co, for a noisy task) attaches the noise-free loss
+        after the factory built the optimizer. It works for every
+        subclass, including those with their own ``__init__``
+        (random search, the scipy entries), which ``dataclasses.replace``
+        cannot rebuild. The original is unchanged.
+
+        Parameters
+        ----------
+        true_loss_fn : Callable or None
+            Noise-free loss of one member's parameters; see
+            :attr:`true_loss_fn`. ``None`` removes it.
+
+        Returns
+        -------
+        UpdateClass
+            A shallow copy of ``self`` with ``true_loss_fn`` set.
+        """
+        new = copy.copy(self)
+        object.__setattr__(new, "true_loss_fn", true_loss_fn)
+        return new
 
     @property
     def fevals_bound(self) -> int:
@@ -366,7 +409,11 @@ class UpdateClass(eqx.Module):
         )
         init_done = jnp.array(False)
 
-        n = n_iterations + 1
+        # Exactly ``n_iterations`` steps, every one recorded and charged
+        # (spec O7, 2026-11-04). The loop used to take one extra leading
+        # step whose evaluation of the starting points the optimizer used
+        # but the history dropped, so it was never charged.
+        n = n_iterations
 
         # Reduce each generation in place (``_reduce_entry``) instead of
         # stacking the full ``(n, popsize, dim)`` population/gradient
@@ -387,7 +434,9 @@ class UpdateClass(eqx.Module):
         def scan_step(carry_ext, xs):
             carry, best_params, best_loss, _eval = carry_ext
             new_carry, entry = self.step(carry, xs, dataset)
-            stats, cand_params, cand_loss = _reduce_entry(entry)
+            stats, cand_params, cand_loss = _reduce_entry(
+                entry, self.true_loss_fn
+            )
             best_params, best_loss = _update_best(
                 best_params, best_loss, cand_params, cand_loss
             )
@@ -421,9 +470,9 @@ class UpdateClass(eqx.Module):
         carry, best_params, best_loss, params = final_ext
         _, opt_state, _, batch_state, _, _ = carry
 
-        # Drop the leading sentinel iteration (parity with the legacy
-        # ``history[1:]`` slice) before assembling the reduced HistoryState.
-        stats = tuple(s[1:] for s in stats)
+        # Every step is recorded: the first step's evaluation of the
+        # starting points is the first history entry. The seventh entry is
+        # None for a noise-free task (no ``true_loss_fn``).
         history_state = HistoryState.from_reduced(*stats)
 
         return (
@@ -582,7 +631,11 @@ class UpdateClass(eqx.Module):
 
         batch_state = _broadcast_batch_state(batch_state, n_realizations)
 
-        n = n_iterations + 1
+        # Exactly ``n_iterations`` steps, every one recorded and charged
+        # (spec O7, 2026-11-04). The loop used to take one extra leading
+        # step whose evaluation of the starting points the optimizer used
+        # but the history dropped, so it was never charged.
+        n = n_iterations
 
         # Per-realization running-best / last-evaluated-population seeds;
         # see :meth:`run` for the reduce-in-scan rationale. ``params[:, 0]``
@@ -598,7 +651,9 @@ class UpdateClass(eqx.Module):
             lambda p: jnp.full_like(p, jnp.nan), params
         )
 
-        reduce_batch = jax.vmap(_reduce_entry)
+        reduce_batch = jax.vmap(
+            lambda entry: _reduce_entry(entry, self.true_loss_fn)
+        )
         update_best_batch = jax.vmap(_update_best)
 
         def scan_step(carry_ext, xs):
@@ -633,12 +688,15 @@ class UpdateClass(eqx.Module):
         carry, best_params, best_loss, params = final_ext
         _, opt_state, _, batch_state, _, _ = carry
 
-        # ``stats`` leaves are (n_iter, n_realizations); drop the leading
-        # sentinel iteration and move realization to the front so
-        # ``from_reduced`` (vmapped over realizations) sees canonical
-        # (n_iter,) fields. This transpose is on scalar-per-step arrays,
-        # not the (n, popsize, dim) trajectory the legacy swapaxes copied.
-        stats = tuple(jnp.swapaxes(s[1:], 0, 1) for s in stats)
+        # ``stats`` leaves are (n_iter, n_realizations); move realization to
+        # the front so ``from_reduced`` (vmapped over realizations) sees
+        # canonical (n_iter,) fields. Every step is recorded, including the
+        # first. This transpose is on scalar-per-step arrays, not the
+        # (n, popsize, dim) trajectory the legacy swapaxes copied. The
+        # noise-free entry is None for a noise-free task and stays None.
+        stats = tuple(
+            None if s is None else jnp.swapaxes(s, 0, 1) for s in stats
+        )
         history_state = jax.vmap(HistoryState.from_reduced)(*stats)
 
         return (
@@ -821,7 +879,8 @@ def _maybe_progress_bar(scan_step, n: int, verbose: bool):
 
 def _reduce_entry(
     entry: OptHistory,
-) -> tuple[tuple[Array, ...], PyTree, Array]:
+    true_loss_fn: Callable[[PyTree], Array] | None = None,
+) -> tuple[tuple[Array | None, ...], PyTree, Array]:
     """Reduce one per-step ``OptHistory`` to the fields a run needs.
 
     Returns ``(stats, step_best_params, step_best_loss)`` where ``stats``
@@ -835,6 +894,12 @@ def _reduce_entry(
     carry to maintain a running best in place of a post-hoc
     ``OptHistory.retrieve_best`` over the stacked trajectory.
 
+    With ``true_loss_fn`` (a noisy task), ``stats`` gains a seventh
+    entry: the lowest noise-free loss over this generation's evaluated
+    population (``entry.params``, NaN on skipped steps). Without it the
+    seventh entry is ``None``, so a noise-free run computes and stores
+    nothing extra.
+
     Operates on an unbatched entry (``loss`` shape ``(popsize,)``); the
     batched driver vmaps it over the realization axis.
     """
@@ -847,6 +912,9 @@ def _reduce_entry(
         entry.update_step,
         entry.fevals,
         entry.iterations,
+        None
+        if true_loss_fn is None
+        else jnp.nanmin(jax.vmap(true_loss_fn)(entry.params)),
     )
     # NaN-safe argmin: NaN slots (padding / skipped steps) are pushed to
     # +inf so they are never selected, matching ``jnp.nanargmin`` on the

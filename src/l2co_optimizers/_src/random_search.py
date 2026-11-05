@@ -304,6 +304,15 @@ class RandomSearchUpdateClass(UpdateClass):
             chunk_best_params = jax.tree.map(lambda x: x[best_idx], candidates)
 
             losses_2d = losses.reshape(chunk_iters, popsize)
+            # Noise-free loss of the same candidates, for a noisy task
+            # (spec decision 12); ``None`` keeps a noise-free run free.
+            true_2d = (
+                None
+                if self.true_loss_fn is None
+                else jax.vmap(self.true_loss_fn)(candidates).reshape(
+                    chunk_iters, popsize
+                )
+            )
 
             # Population at this chunk's last in-range iteration. Only the
             # final chunk's value is used downstream, giving the last
@@ -324,14 +333,22 @@ class RandomSearchUpdateClass(UpdateClass):
                 last_pop,
                 chunk_best_loss,
                 chunk_best_params,
+                true_2d,
             )
 
-        _, (losses_2d_all, last_pops, chunk_best_losses, chunk_best_params) = (
-            jax.lax.scan(
-                _chunk,
-                (),
-                (jnp.arange(n_chunks), sample_keys, loss_keys),
-            )
+        (
+            _,
+            (
+                losses_2d_all,
+                last_pops,
+                chunk_best_losses,
+                chunk_best_params,
+                true_2d_all,
+            ),
+        ) = jax.lax.scan(
+            _chunk,
+            (),
+            (jnp.arange(n_chunks), sample_keys, loss_keys),
         )
 
         # Reduce the flat candidate losses per logical iteration directly
@@ -349,6 +366,14 @@ class RandomSearchUpdateClass(UpdateClass):
             jnp.full((n_iterations,), self.hash, dtype=int),
             jnp.full((n_iterations,), popsize, dtype=int),
             jnp.ones((n_iterations,), dtype=int),
+            output_min_true=(
+                None
+                if true_2d_all is None
+                else jnp.nanmin(
+                    true_2d_all.reshape(padded_iters, popsize)[:n_iterations],
+                    axis=1,
+                )
+            ),
         )
 
         # Global best across all chunks (earliest chunk wins ties).
