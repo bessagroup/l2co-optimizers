@@ -281,12 +281,14 @@ Hydra merges a group's options across search paths. So an application can keep i
 
 ## Releases
 
-Up to `l2co` 1.6.0 the sibling packages declared each other unpinned, so nothing enforced compatibility between releases. From 1.7.0, `l2co` declares `l2co-optimizers>=0.3.0`. The pairs:
+Up to `l2co` 1.6.0 the sibling packages declared each other unpinned, so nothing enforced compatibility between releases. From 1.7.0, `l2co` declares a minimum (`l2co-optimizers>=0.3.0`; 2.0.0 declares `>=0.5.0`). The pairs:
 
 | `l2co` | `l2co-optimizers` |
 | --- | --- |
 | 1.6.0 | 0.1.0 only |
 | 1.7.0 | 0.3.0 or later |
+| 1.8.0, 1.8.1 | 0.4.0 (declared `>=0.4.0`; not checked against 0.5.0) |
+| 2.0.0 | 0.5.0 or later |
 
 **`l2co` 1.6.0 does not import with `l2co-optimizers` 0.2.0**, which an unpinned install now picks. 0.2.0 no longer exports 37 names that `l2co` 1.6.0 imports: the switching layer (`SubOpt`, the handshake policy) moved into `l2co` (l2co ADR 0019), and the per-library factories became private. With `l2co` 1.6.0, install `l2co-optimizers==0.1.0`.
 
