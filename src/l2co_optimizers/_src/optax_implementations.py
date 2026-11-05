@@ -52,6 +52,7 @@ from l2co_optimizers._src.core.update_class import UpdateClass
 from l2co_optimizers._src.core.utils import (
     normalize_key,
 )
+from l2co_optimizers._src.plain_values import resolve_named_learning_rate
 
 #                                                          Authorship & Credits
 # =============================================================================
@@ -371,7 +372,10 @@ def optax_update(
         underlying constructor. Defaults to ``""``, which resolves
         to the family default.
     **hyperparameters
-        Forwarded to the optimizer constructor.
+        Forwarded to the optimizer constructor. A string ``learning_rate``
+        names a schedule (spec O10, see
+        :mod:`~l2co_optimizers._src.plain_values`): ``"relative_step"`` is
+        Adafactor's ``min(1e-2, 1/sqrt(t))``.
 
     Returns
     -------
@@ -379,6 +383,11 @@ def optax_update(
         Configured optimizer wrapper.
     """
     _, static = eqx.partition(model, eqx.is_inexact_array)
+    # A named learning rate ("relative_step") becomes its schedule for the
+    # constructor; the transfer builders get its nominal number (spec O10).
+    hyperparameters, transfer_hyperparameters = resolve_named_learning_rate(
+        name, hyperparameters
+    )
 
     init_fn, step_fn = optax_fn(
         static=static,
@@ -389,7 +398,7 @@ def optax_update(
         pass_rng=pass_rng,
     )
     read_fn, write_fn = build_transfer_fns(
-        name, FAMILY_GRADIENT, hyperparameters
+        name, FAMILY_GRADIENT, transfer_hyperparameters
     )
     switch_ports = build_switch_ports(name, FAMILY_GRADIENT)
 
@@ -460,7 +469,10 @@ def optax_update_extra_kwargs(
         not ``popsize``; ``None`` (default) leaves the bound at
         ``popsize``.
     **hyperparameters
-        Forwarded to the optimizer constructor.
+        Forwarded to the optimizer constructor. A string ``learning_rate``
+        names a schedule (spec O10, see
+        :mod:`~l2co_optimizers._src.plain_values`): ``"relative_step"`` is
+        Adafactor's ``min(1e-2, 1/sqrt(t))``.
 
     Returns
     -------
@@ -468,6 +480,9 @@ def optax_update_extra_kwargs(
         Configured optimizer wrapper.
     """
     _, static = eqx.partition(model, eqx.is_inexact_array)
+    hyperparameters, transfer_hyperparameters = resolve_named_learning_rate(
+        name, hyperparameters
+    )
 
     init_fn, step_fn = optax_extra_kwargs_fn(
         static=static,
@@ -478,7 +493,7 @@ def optax_update_extra_kwargs(
         pass_rng=pass_rng,
     )
     read_fn, write_fn = build_transfer_fns(
-        name, FAMILY_GRADIENT, hyperparameters
+        name, FAMILY_GRADIENT, transfer_hyperparameters
     )
     switch_ports = build_switch_ports(name, FAMILY_GRADIENT)
 
