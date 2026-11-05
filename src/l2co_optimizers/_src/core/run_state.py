@@ -29,6 +29,7 @@ from jaxtyping import Array, Float, PRNGKeyArray, PyTree
 from l2co_optimizers._src.core.batching import BatchState
 from l2co_optimizers._src.core.history_state import HistoryState
 from l2co_optimizers._src.core.model_evaluation import evaluate
+from l2co_optimizers._src.core.state_transfer import FAMILY_DISTRIBUTION
 from l2co_optimizers._src.core.typing import (
     InputParameters,
     SamplerFunction,
@@ -156,6 +157,12 @@ def reset(
 ) -> RunState:
     """Reset the run state with new samples.
 
+    The sampler's draws seed ``best_params``/``best_loss`` and initialise
+    the optimizer state. A distribution-family optimizer then draws its
+    own first generation around ``x0 = samples[0]`` with its ``ask_fn``
+    (spec decision 17). Every other family starts from the draws
+    themselves.
+
     Parameters
     ----------
     run_state : RunState
@@ -201,19 +208,36 @@ def reset(
     best_params = jax.tree.map(lambda x: x[best_idx], samples)
     best_loss = loss[best_idx]
 
-    opt_state = run_state.update_class.init_state(
+    update_class = run_state.update_class
+    opt_state = update_class.init_state(
         params=samples,
         batch_state=batch_state,
         dataset=dataset,
         key=key,
     )
 
+    # First generation by family (spec decision 17). A distribution-based
+    # method starts its distribution at x0 = samples[0], the point every
+    # optimizer shares, and its first generation is its own draw around
+    # it: N(x0, sigma0^2 C0), not the sampler's draws, which it would
+    # otherwise be told as if they came from that distribution. Population
+    # methods (GA, DE, PSO, TuRBO, RBF, ...) keep the sampler's draws as
+    # their initial population, and single-point methods use samples[0].
+    params = samples
+    if update_class.family == FAMILY_DISTRIBUTION:
+        if update_class.ask_fn is None:
+            raise ValueError(
+                "A distribution-family optimizer needs an ask_fn to draw "
+                "its first generation"
+            )
+        params, opt_state = update_class.ask_fn(opt_state, jr.fold_in(key, 1))
+
     return RunState(
-        params=samples,
+        params=params,
         best_params=best_params,
         best_loss=best_loss,
         opt_state=opt_state,
-        update_class=run_state.update_class,
+        update_class=update_class,
     )
 
 
