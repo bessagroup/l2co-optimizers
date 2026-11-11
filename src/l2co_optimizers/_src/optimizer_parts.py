@@ -61,6 +61,7 @@ from l2co_optimizers._src.lbfgs import (
     stock_lbfgs,
 )
 from l2co_optimizers._src.mapping import optimizer_mapping
+from l2co_optimizers._src.mlsl import MLSL_OPTIMIZERS
 from l2co_optimizers._src.optax_implementations import (
     normalized_optax_from_state,
     normalized_optax_normal,
@@ -105,7 +106,7 @@ __all__ = [
 
 #: Registry names that run only as plain registry entries (normalized). Their
 #: solver owns the loop or cannot yet be stepped by one -- Nelder--Mead
-#: (ADR 0001), the scipy minimisers (ADR 0002), IPOPT (ADR 0003) -- so
+#: (ADR 0001), the scipy minimisers (ADR 0002), IPOPT (ADR 0003), MLSL -- so
 #: :func:`optimizer_parts` refuses them, and they can never be a sub-optimizer
 #: in a switching menu or an rl2co action. A caller assembling a menu from a
 #: configured suite leaves these out. ADR 0011 takes the steppable ones off
@@ -115,6 +116,7 @@ PLAIN_RUN_OPTIMIZERS: frozenset[str] = (
     (OPTIMISTIX_OPTIMIZERS - frozenset(GRADIENT_SOLVERS))
     | SCIPY_OPTIMIZERS
     | IPOPT_OPTIMIZERS
+    | MLSL_OPTIMIZERS
 )
 
 
@@ -764,6 +766,15 @@ def optimizer_parts(
             f"there is no step to interleave with a switch. It runs only "
             f"as a plain registry entry, not inside a switching menu (ADR "
             f"0002)."
+        )
+
+    if name in MLSL_OPTIMIZERS:
+        raise ValueError(
+            f"Optimizer {opt_step.optimizer!r} is MLSL, which cannot be "
+            f"unpacked into parts: it runs the whole budget inside one host "
+            f"callback, on the scipy entries' driver, so there is no step "
+            f"to interleave with a switch. It runs only as a plain registry "
+            f"entry, not inside a switching menu (ADR 0002)."
         )
 
     if name in IPOPT_OPTIMIZERS:

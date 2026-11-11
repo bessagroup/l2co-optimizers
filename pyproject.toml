@@ -76,7 +76,8 @@ markers = [
 testpaths = ["tests"]
 
 [tool.ruff]
-extend-exclude = [".venv-docker"]
+# tests/reference holds vendored third-party code, kept as published.
+extend-exclude = [".venv-docker", "tests/reference"]
 # Respect the excludes even when pre-commit passes file names explicitly.
 force-exclude = true
 line-length = 79

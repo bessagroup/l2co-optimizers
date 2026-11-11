@@ -18,6 +18,7 @@ from l2co_optimizers._src.core.utils import normalize_key
 from l2co_optimizers._src.evosax_implementations import evosax_mapping
 from l2co_optimizers._src.ipopt import ipopt_mapping
 from l2co_optimizers._src.lbfgs import lbfgs_mapping
+from l2co_optimizers._src.mlsl import mlsl_mapping
 from l2co_optimizers._src.optax_implementations import optax_mapping
 from l2co_optimizers._src.optimistix_implementations import optimistix_mapping
 from l2co_optimizers._src.random_search import random_search_mapping
@@ -38,7 +39,7 @@ __status__ = "Stable"
 # that, when called with the keyword contract used by ``RunState.init``
 # (``**hyperparameters, task, opt_hash, bounded, stop_fn``), returns an
 # ``UpdateClass`` instance. Built-in entries are the base optimizers from the
-# optax/evosax/random-search/shade/lbfgs/optimistix/scipy/ipopt modules
+# optax/evosax/random-search/shade/lbfgs/optimistix/scipy/ipopt/mlsl modules
 # only.
 # Meta-optimizers are NOT hardcoded here: l2co's own ``"l2co"`` strategy
 # self-registers via ``register_optimizer`` from
@@ -71,6 +72,7 @@ optimizers: dict[str, Callable[..., UpdateClass]] = {
         | scipy_mapping
         | scipy_stepped_mapping
         | ipopt_mapping
+        | mlsl_mapping
     ).items()
 }
 
@@ -87,6 +89,7 @@ _constraint_handling: dict[str, str] = {
     "trustconstr": CONSTRAINTS_GENERAL,
     # The solver takes the bounds itself.
     "lbfgsb": CONSTRAINTS_BOX,
+    "mlsl": CONSTRAINTS_BOX,
     "powell": CONSTRAINTS_BOX,
     "tnc": CONSTRAINTS_BOX,
     # Candidates are repaired or clipped before the state learns from them.
