@@ -38,3 +38,11 @@ deletions only:
 - The quirks a port must reproduce are listed in
   `~/wt/l2co-opt-wave-60-64/decisions.md`, "Reference facts", and must be
   repeated in each entry's module docstring.
+
+## Fixtures
+
+- `make_fixture_jde21.py` writes `tests/data/jde21_metabox_fixture.json`
+  (MetaBox `JDE21`: final best cost of 20 seeds on sphere, Rastrigin and
+  Rosenbrock, 10-D, box [-5, 5], 10 000 evaluations), read by the slow
+  parity test in `tests/test_jde21.py`. Re-run it from the repository root
+  with `uv run --no-sync python tests/reference/metabox_rldas/make_fixture_jde21.py`.
