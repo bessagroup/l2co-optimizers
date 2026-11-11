@@ -142,6 +142,22 @@ optimizer draws its own post-switch population instead of being handed
 one. Set for every distribution-based algorithm and the mutation GAs;
 never inferred from `family`.
 
+**DE population**:
+`DEPopulation` (`_src/de_common.py`): the state the DE variants of the
+RL-DAS menu share — individuals, costs, live-slot mask, per-individual
+F / Cr, archive, success-history memories and successes — padded to the
+starting population size, `NaN` in inactive slots. Under RL-DAS it
+belongs to the switching wrapper, not to any one variant; what only one
+variant understands is its **private state** (`DEPrivateState`).
+_Avoid_: "group" (MetaBox's name), "sub-population" (j21's big and
+small populations live inside one `DEPopulation`)
+
+**Live individuals**:
+The occupied slots of a `DEPopulation`, always a prefix. A DE step
+bills only the rows it evaluates, so the evaluations per generation
+shrink with the population; `generations_for_budget` turns a budget
+into a step count.
+
 The switching vocabulary — **handshake**, **menu**, **generation
 width**, **evaluation width**, **padding row** — is defined in l2co's
 `CONTEXT.md`, next to the code that implements it.
