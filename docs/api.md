@@ -106,6 +106,18 @@ evaluation) lives in l2co (l2co ADR 0019).
 
 ::: l2co_optimizers.step_fevals
 
+## Warm-start hooks
+
+Per-optimizer hooks for a caller that hands curvature from `cmaes` to `bfgs` and back (the CMA-ES -> BFGS warm starts of trajectory-based selection and best single switch; issue #64). They act on one optimizer's state, between `init_fn` and the first step, and are not part of the `TransferBundle`, which carries scale only (ADR 0013). Matrices are in the raveled coordinates of the parameters. The hooks take any matrix: whether BFGS gets `C` or `sigma**2 * C` is the caller's choice (see `seed_inverse_hessian`).
+
+::: l2co_optimizers.seed_inverse_hessian
+
+::: l2co_optimizers.read_inverse_hessian
+
+::: l2co_optimizers.read_cmaes
+
+::: l2co_optimizers.seed_cmaes_covariance
+
 ## State transfer
 
 ::: l2co_optimizers.TransferBundle

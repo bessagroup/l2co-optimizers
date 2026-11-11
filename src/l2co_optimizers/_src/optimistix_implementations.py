@@ -32,6 +32,9 @@ brief:
   point it evaluated, so :class:`WolfeBFGS` overrides the solver's
   ``step`` to give the search the slope there as well. The default stays
   Armijo backtracking, so existing ``bfgs`` runs are unchanged.
+  :func:`seed_inverse_hessian` starts ``bfgs`` from a given inverse
+  Hessian instead of the identity (issue #64); without it a run is
+  unchanged.
 * **Bounds** are applied by projecting inside the objective, so every
   point the loss sees, and every point the history records, lies in the
   box; the solver's own state keeps the unprojected iterate.
@@ -426,19 +429,22 @@ class WolfeBFGS(optx.AbstractBFGS):
     def _with_operator(self, f_info: Any, operator: Any) -> Any:
         return eqx.tree_at(self._operator, f_info, operator)
 
-    def _reset(self, f_info: Any, y: PyTree) -> Any:
-        """``f_info`` with its Hessian estimate reset to the identity.
+    def _reset(self, f_info: Any, y: PyTree, seed: PyTree = None) -> Any:
+        """``f_info`` with its Hessian estimate reset to its start.
 
-        Only the operator's matrix changes, so the result has exactly
-        ``f_info``'s structure and the two can be selected between.
+        The start is ``seed``, the operator matrix that
+        :func:`seed_inverse_hessian` stored in the solver state's
+        ``hessian_update_state``, or the identity when nothing was
+        seeded. Only the operator's matrix changes, so the result has
+        exactly ``f_info``'s structure and the two can be selected
+        between.
         """
-        identity, _ = self.init_hessian(y, f_info.f, f_info.grad)
+        if seed is None:
+            identity, _ = self.init_hessian(y, f_info.f, f_info.grad)
+            seed = self._operator(identity).pytree
         operator = self._operator(f_info)
         return self._with_operator(
-            f_info,
-            eqx.tree_at(
-                lambda o: o.pytree, operator, self._operator(identity).pytree
-            ),
+            f_info, eqx.tree_at(lambda o: o.pytree, operator, seed)
         )
 
     def update_hessian(
@@ -542,7 +548,11 @@ class WolfeBFGS(optx.AbstractBFGS):
             None,
         )
         f_info = _tree_where(accept, accepted, state.f_info)
-        f_info = _tree_where(restart, self._reset(f_info, y), f_info)
+        f_info = _tree_where(
+            restart,
+            self._reset(f_info, y, state.hessian_update_state),
+            f_info,
+        )
         y_new = _tree_where(accept, state.y_eval, y)
         aux = _tree_where(accept, aux_eval, state.aux)
 
@@ -555,7 +565,7 @@ class WolfeBFGS(optx.AbstractBFGS):
         slope_qn = _tree_dot(
             f_info.grad, jax.tree.map(jnp.negative, quasi_newton.newton)
         )
-        steepest_info = self._reset(f_info, y_new)
+        steepest_info = self._reset(f_info, y_new, state.hessian_update_state)
         steepest = self.descent.query(
             y_new, steepest_info, state.descent_state
         )
@@ -936,6 +946,172 @@ def bfgs_update(
         bounded=bounded,
         stop_fn=stop_fn,
         trial_gradients=linesearch == "wolfe",
+    )
+
+
+#                                            bfgs: seeding the inverse Hessian
+# =============================================================================
+
+
+def _inverse_operator(state: GradientSolverState) -> Any:
+    """The inverse-Hessian operator of a ``bfgs`` state."""
+    f_info = state.solver_state.f_info
+    if not isinstance(f_info, optx.FunctionInfo.EvalGradHessianInv):
+        raise ValueError(
+            "This bfgs state approximates the Hessian, not its inverse "
+            "(use_inverse=False); the inverse-Hessian hooks need "
+            "use_inverse=True."
+        )
+    return f_info.hessian_inv
+
+
+def _leaf_slices(y: PyTree) -> list[tuple[Array, slice]]:
+    """Each leaf of ``y`` with its slice of the raveled vector."""
+    out, start = [], 0
+    for leaf in jax.tree.leaves(y):
+        out.append((leaf, slice(start, start + leaf.size)))
+        start += leaf.size
+    return out
+
+
+def _to_operator_pytree(matrix: Array, y: PyTree, like: PyTree) -> PyTree:
+    """A raveled ``(n, n)`` matrix as ``like``, an operator's pytree.
+
+    ``like`` has the layout of optimistix's identity operator: one block
+    per (row leaf, column leaf) of ``y``, of shape ``row.shape +
+    column.shape``.
+    """
+    leaves = _leaf_slices(y)
+    n = sum(leaf.size for leaf, _ in leaves)
+    matrix = jnp.asarray(matrix)
+    if matrix.shape != (n, n):
+        raise ValueError(
+            f"Expected an ({n}, {n}) matrix for {n} parameters, got shape "
+            f"{matrix.shape}."
+        )
+    blocks = [
+        matrix[rows, cols].reshape(row.shape + col.shape)
+        for row, rows in leaves
+        for col, cols in leaves
+    ]
+    treedef = jax.tree.structure(y)
+    pytree = jax.tree.unflatten(treedef.compose(treedef), blocks)
+    return jax.tree.map(lambda old, new: new.astype(old.dtype), like, pytree)
+
+
+def seed_inverse_hessian(
+    state: GradientSolverState, inverse_hessian: Array
+) -> GradientSolverState:
+    """Start a ``bfgs`` run from ``inverse_hessian`` instead of the identity.
+
+    Call it on the state ``init_fn`` returns, before the first step. It
+    sets the inverse-Hessian estimate the first quasi-Newton direction
+    uses. With ``linesearch="wolfe"`` it also stores the matrix, so that
+    :class:`WolfeBFGS` returns to it, not to the identity, when it
+    restarts after a failed line search or falls back to steepest
+    descent. The Armijo search (``optimistix.BFGS``) never resets its
+    estimate, so there only the start changes.
+
+    The hook takes any matrix and does not choose one. The two CMA-ES
+    -> BFGS warm starts it serves differ:
+
+    * trajectory-based selection, native version (Jankovic et al.
+      2022): ``inverse_hessian = C``, CMA-ES's raw matrix ``C`` without
+      ``sigma**2`` (their code, Zenodo 6458266, ``dynas/bfgs.py:112``:
+      ``self.Hk = parameters['C']``);
+    * best single switch (Schröder et al. 2022, §3.4): ``C * beta``.
+      The paper does not state ``beta``; reading their ``C`` literally,
+      ``beta = 1`` was chosen, so the same ``C``.
+
+    ``sigma**2 * C`` is CMA-ES's actual sampling covariance; the reverse
+    transfer of best single switch (:func:`seed_cmaes_covariance`) passes
+    ``C = H / sigma**2`` and keeps ``sigma``. The caller (metabbo-jax
+    #9, #13) makes the choice. :func:`read_cmaes` returns ``C`` and
+    ``sigma``.
+
+    The state's structure: an unseeded state is exactly what it was
+    before this hook existed. A seeded ``"wolfe"`` state carries the
+    matrix in its solver state's ``hessian_update_state``, so it no
+    longer has the unseeded structure. To select between a seeded and
+    an unseeded state (``lax.cond``, ``jnp.where``), seed the other one
+    with the identity: it runs exactly as an unseeded one.
+
+    Parameters
+    ----------
+    state : GradientSolverState
+        A ``bfgs`` state, from ``init_fn``, built with ``use_inverse``
+        (the default). For a batch of states, ``vmap`` the hook.
+    inverse_hessian : Array
+        The ``(n, n)`` initial inverse Hessian, ``n`` the number of
+        parameters, in the raveled coordinates of the parameters: the
+        order of ``jax.flatten_util.ravel_pytree`` (the leaves in tree
+        order, each flattened row-major). For a single array parameter
+        that is its own flattened order. It is not checked for symmetry
+        or definiteness. Pass a symmetric positive definite matrix: with
+        ``"wolfe"`` the seed replaces the identity in the fallback too,
+        so the fallback direction is ``-inverse_hessian @ grad``, not
+        steepest descent. If the seed is not positive definite that
+        direction can go uphill as well; the step then stays where it is
+        and the run makes no further progress. A nearly singular seed
+        likewise weakens the fallback. An unseeded run always falls back
+        to the identity.
+
+    Returns
+    -------
+    GradientSolverState
+        ``state`` with the estimate seeded.
+
+    Raises
+    ------
+    ValueError
+        If ``inverse_hessian`` is not ``(n, n)``, or the state was built
+        with ``use_inverse=False`` (it approximates the Hessian; not
+        supported).
+    """
+    operator = _inverse_operator(state)
+    matrix = _to_operator_pytree(inverse_hessian, state.y, operator.pytree)
+    solver_state = state.solver_state
+    f_info = eqx.tree_at(
+        lambda f: f.hessian_inv.pytree, solver_state.f_info, matrix
+    )
+    if isinstance(solver_state.search_state, WolfeSearchState):
+        solver_state = eqx.tree_at(
+            lambda s: (s.f_info, s.hessian_update_state),
+            solver_state,
+            (f_info, matrix),
+            is_leaf=lambda x: x is None,
+        )
+    else:
+        solver_state = eqx.tree_at(lambda s: s.f_info, solver_state, f_info)
+    return GradientSolverState(state.y, solver_state)
+
+
+def read_inverse_hessian(state: GradientSolverState) -> Array:
+    """The current inverse-Hessian estimate of a ``bfgs`` state.
+
+    The reverse of :func:`seed_inverse_hessian`: an ``(n, n)`` matrix in
+    the same raveled coordinates.
+
+    Raises
+    ------
+    ValueError
+        If the state was built with ``use_inverse=False``.
+    """
+    pytree = _inverse_operator(state).pytree
+    leaves = _leaf_slices(state.y)
+    blocks = iter(jax.tree.leaves(pytree))
+    return jnp.concatenate(
+        [
+            jnp.concatenate(
+                [
+                    next(blocks).reshape(row.size, col.size)
+                    for col, _ in leaves
+                ],
+                axis=1,
+            )
+            for row, _ in leaves
+        ],
+        axis=0,
     )
 
 
