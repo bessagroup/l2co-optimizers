@@ -234,6 +234,10 @@ class _Driver:
         infinite loss.
     last_x : np.ndarray
         The last point evaluated, seeded with the starting point.
+    start_key
+        The key the run started with, before any evaluation split it.
+        An entry with host-side randomness of its own (``"mlsl"``) seeds
+        its generator from it.
     batch_state : BatchState
         Advanced once per evaluation.
     eval_eps : float
@@ -261,6 +265,7 @@ class _Driver:
         self.eval_eps = eval_eps
         self._dataset = dataset
         self._key = key
+        self.start_key = key
         self._lo, self._hi = _np_bounds(bounded, x0.size)
         self.batch_state = batch_state
         self.losses = np.full(n_evals, np.nan)
