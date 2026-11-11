@@ -17,6 +17,7 @@ from l2co_optimizers._src.core.update_class import UpdateClass
 from l2co_optimizers._src.core.utils import normalize_key
 from l2co_optimizers._src.evosax_implementations import evosax_mapping
 from l2co_optimizers._src.ipopt import ipopt_mapping
+from l2co_optimizers._src.jde21 import jde21_mapping
 from l2co_optimizers._src.lbfgs import lbfgs_mapping
 from l2co_optimizers._src.optax_implementations import optax_mapping
 from l2co_optimizers._src.optimistix_implementations import optimistix_mapping
@@ -65,6 +66,7 @@ optimizers: dict[str, Callable[..., UpdateClass]] = {
         | random_search_mapping
         | rbf_trust_region_mapping
         | shade_mapping
+        | jde21_mapping
         | turbo_mapping
         | lbfgs_mapping
         | optimistix_mapping
@@ -90,6 +92,8 @@ _constraint_handling: dict[str, str] = {
     "powell": CONSTRAINTS_BOX,
     "tnc": CONSTRAINTS_BOX,
     # Candidates are repaired or clipped before the state learns from them.
+    "jde21": CONSTRAINTS_BOX,
+    "jde21metabox": CONSTRAINTS_BOX,
     "rbftrustregion": CONSTRAINTS_BOX,
     "shade": CONSTRAINTS_BOX,
     "turbo": CONSTRAINTS_BOX,
