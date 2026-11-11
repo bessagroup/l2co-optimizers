@@ -785,6 +785,12 @@ def optimizer_parts(
     if name in {normalize_key(k) for k in madde_mapping}:
         raise ValueError(
             f"Optimizer {opt_step.optimizer!r} is MadDE, a DE variant on "
+            f"de_common: it switches through metabbo-jax's RL-DAS wrapper, "
+            f"which shares its population, and its switching-menu ports "
+            f"are not decided (#60-#62). It runs only as a plain registry "
+            f"entry, not inside a switching menu."
+        )
+
     if name in {normalize_key(k) for k in jde21_mapping}:
         raise ValueError(
             f"Optimizer {opt_step.optimizer!r} is JDE21, a DE variant on "
