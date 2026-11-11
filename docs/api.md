@@ -92,6 +92,10 @@ The run loop is a set of [`UpdateClass`](#l2co_optimizers.UpdateClass) methods (
 
 ::: l2co_optimizers.shade_update
 
+::: l2co_optimizers.nl_shade_rsp_update
+
+::: l2co_optimizers.nl_shade_rsp_metabox_update
+
 ## Optimizer parts
 
 What a loop that switches between optimizers drives directly. The

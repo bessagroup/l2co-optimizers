@@ -41,6 +41,13 @@ deletions only:
 
 ## Fixtures
 
+- `make_fixture_nl_shade_rsp.py` writes
+  `tests/data/nl_shade_rsp_metabox_fixture.json`: the best cost of 20
+  seeded `NL_SHADE_RSP` runs (driven in 2500-evaluation RL-DAS periods,
+  budget 20000) on sphere, Rastrigin and Rosenbrock in 10 D. The slow
+  tests in `tests/test_nl_shade_rsp.py` compare `nl_shade_rsp_metabox`
+  with it. Run it from the repository root with
+  `uv run --no-sync python tests/reference/metabox_rldas/make_fixture_nl_shade_rsp.py`.
 - `make_fixture_madde.py` writes `tests/data/madde_metabox_fixture.json`
   (20 seeds of MetaBox's `MadDE` on the 10-D shifted sphere, shifted
   Rastrigin and Rosenbrock, a 10 000-evaluation budget) for the slow

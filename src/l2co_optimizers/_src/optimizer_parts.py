@@ -63,6 +63,7 @@ from l2co_optimizers._src.lbfgs import (
 )
 from l2co_optimizers._src.madde import madde_mapping
 from l2co_optimizers._src.mapping import optimizer_mapping
+from l2co_optimizers._src.nl_shade_rsp import nl_shade_rsp_mapping
 from l2co_optimizers._src.optax_implementations import (
     normalized_optax_from_state,
     normalized_optax_normal,
@@ -120,6 +121,7 @@ PLAIN_RUN_OPTIMIZERS: frozenset[str] = (
     (OPTIMISTIX_OPTIMIZERS - frozenset(GRADIENT_SOLVERS))
     | SCIPY_OPTIMIZERS
     | IPOPT_OPTIMIZERS
+    | frozenset(normalize_key(k) for k in nl_shade_rsp_mapping)
     | frozenset(normalize_key(k) for k in madde_mapping)
     | frozenset(normalize_key(k) for k in jde21_mapping)
 )
@@ -782,22 +784,22 @@ def optimizer_parts(
             f"registry entry, not inside a switching menu (ADR 0003)."
         )
 
-    if name in {normalize_key(k) for k in madde_mapping}:
-        raise ValueError(
-            f"Optimizer {opt_step.optimizer!r} is MadDE, a DE variant on "
-            f"de_common: it switches through metabbo-jax's RL-DAS wrapper, "
-            f"which shares its population, and its switching-menu ports "
-            f"are not decided (#60-#62). It runs only as a plain registry "
-            f"entry, not inside a switching menu."
+    de_variants = {
+        normalize_key(key): label
+        for mapping, label in (
+            (jde21_mapping, "JDE21"),
+            (madde_mapping, "MadDE"),
+            (nl_shade_rsp_mapping, "NL-SHADE-RSP"),
         )
-
-    if name in {normalize_key(k) for k in jde21_mapping}:
+        for key in mapping
+    }
+    if name in de_variants:
         raise ValueError(
-            f"Optimizer {opt_step.optimizer!r} is JDE21, a DE variant on "
-            f"de_common: it switches through metabbo-jax's RL-DAS wrapper, "
-            f"which shares its population, and its switching-menu ports "
-            f"are not decided (#60-#62). It runs only as a plain registry "
-            f"entry, not inside a switching menu."
+            f"Optimizer {opt_step.optimizer!r} is {de_variants[name]}, a DE "
+            f"variant on de_common: it switches through metabbo-jax's "
+            f"RL-DAS wrapper, which shares its population, and its "
+            f"switching-menu ports are not decided (#60-#62). It runs only "
+            f"as a plain registry entry, not inside a switching menu."
         )
 
     raise ValueError(
