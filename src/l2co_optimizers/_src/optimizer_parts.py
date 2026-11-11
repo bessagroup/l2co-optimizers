@@ -56,10 +56,12 @@ from l2co_optimizers._src.core.typing import LossFunction
 from l2co_optimizers._src.core.utils import normalize_key
 from l2co_optimizers._src.evosax_implementations import normalized_evosax
 from l2co_optimizers._src.ipopt import IPOPT_OPTIMIZERS
+from l2co_optimizers._src.jde21 import jde21_mapping
 from l2co_optimizers._src.lbfgs import (
     DEFAULT_MAX_LINESEARCH_STEPS,
     stock_lbfgs,
 )
+from l2co_optimizers._src.madde import madde_mapping
 from l2co_optimizers._src.mapping import optimizer_mapping
 from l2co_optimizers._src.nl_shade_rsp import nl_shade_rsp_mapping
 from l2co_optimizers._src.optax_implementations import (
@@ -120,6 +122,8 @@ PLAIN_RUN_OPTIMIZERS: frozenset[str] = (
     | SCIPY_OPTIMIZERS
     | IPOPT_OPTIMIZERS
     | frozenset(normalize_key(k) for k in nl_shade_rsp_mapping)
+    | frozenset(normalize_key(k) for k in madde_mapping)
+    | frozenset(normalize_key(k) for k in jde21_mapping)
 )
 
 
@@ -786,6 +790,22 @@ def optimizer_parts(
             f"variant on de_common: it switches through metabbo-jax's "
             f"RL-DAS wrapper, which shares its population, and its "
             f"switching-menu ports "
+        )
+
+    if name in {normalize_key(k) for k in madde_mapping}:
+        raise ValueError(
+            f"Optimizer {opt_step.optimizer!r} is MadDE, a DE variant on "
+            f"de_common: it switches through metabbo-jax's RL-DAS wrapper, "
+            f"which shares its population, and its switching-menu ports "
+            f"are not decided (#60-#62). It runs only as a plain registry "
+            f"entry, not inside a switching menu."
+        )
+
+    if name in {normalize_key(k) for k in jde21_mapping}:
+        raise ValueError(
+            f"Optimizer {opt_step.optimizer!r} is JDE21, a DE variant on "
+            f"de_common: it switches through metabbo-jax's RL-DAS wrapper, "
+            f"which shares its population, and its switching-menu ports "
             f"are not decided (#60-#62). It runs only as a plain registry "
             f"entry, not inside a switching menu."
         )
