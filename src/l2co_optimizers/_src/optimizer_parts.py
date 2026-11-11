@@ -60,6 +60,7 @@ from l2co_optimizers._src.lbfgs import (
     DEFAULT_MAX_LINESEARCH_STEPS,
     stock_lbfgs,
 )
+from l2co_optimizers._src.madde import madde_mapping
 from l2co_optimizers._src.mapping import optimizer_mapping
 from l2co_optimizers._src.optax_implementations import (
     normalized_optax_from_state,
@@ -105,7 +106,10 @@ __all__ = [
 
 #: Registry names that run only as plain registry entries (normalized). Their
 #: solver owns the loop or cannot yet be stepped by one -- Nelder--Mead
-#: (ADR 0001), the scipy minimisers (ADR 0002), IPOPT (ADR 0003) -- so
+#: (ADR 0001), the scipy minimisers (ADR 0002), IPOPT (ADR 0003) -- or
+#: switch another way: the DE variants on ``de_common`` share one population
+#: through metabbo-jax's RL-DAS wrapper, and their menu ports are not decided
+#: (#60-#62) -- so
 #: :func:`optimizer_parts` refuses them, and they can never be a sub-optimizer
 #: in a switching menu or an rl2co action. A caller assembling a menu from a
 #: configured suite leaves these out. ADR 0011 takes the steppable ones off
@@ -115,6 +119,7 @@ PLAIN_RUN_OPTIMIZERS: frozenset[str] = (
     (OPTIMISTIX_OPTIMIZERS - frozenset(GRADIENT_SOLVERS))
     | SCIPY_OPTIMIZERS
     | IPOPT_OPTIMIZERS
+    | frozenset(normalize_key(k) for k in madde_mapping)
 )
 
 
@@ -773,6 +778,15 @@ def optimizer_parts(
             f"runs the whole budget inside one host callback, so there is "
             f"no step to interleave with a switch. It runs only as a plain "
             f"registry entry, not inside a switching menu (ADR 0003)."
+        )
+
+    if name in {normalize_key(k) for k in madde_mapping}:
+        raise ValueError(
+            f"Optimizer {opt_step.optimizer!r} is MadDE, a DE variant on "
+            f"de_common: it switches through metabbo-jax's RL-DAS wrapper, "
+            f"which shares its population, and its switching-menu ports "
+            f"are not decided (#60-#62). It runs only as a plain registry "
+            f"entry, not inside a switching menu."
         )
 
     raise ValueError(
