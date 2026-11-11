@@ -48,3 +48,8 @@ deletions only:
   each run used (10 018: MetaBox's last generation runs past the budget),
   and the parity test gives the port that same count. Run it from the repository root with
   `uv run --no-sync python -m tests.reference.metabox_rldas.make_fixture_madde`.
+- `make_fixture_jde21.py` writes `tests/data/jde21_metabox_fixture.json`
+  (MetaBox `JDE21`: final best cost of 20 seeds on sphere, Rastrigin and
+  Rosenbrock, 10-D, box [-5, 5], 10 000 evaluations), read by the slow
+  parity test in `tests/test_jde21.py`. Re-run it from the repository root
+  with `uv run --no-sync python tests/reference/metabox_rldas/make_fixture_jde21.py`.

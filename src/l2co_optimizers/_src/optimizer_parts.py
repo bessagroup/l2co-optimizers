@@ -56,6 +56,7 @@ from l2co_optimizers._src.core.typing import LossFunction
 from l2co_optimizers._src.core.utils import normalize_key
 from l2co_optimizers._src.evosax_implementations import normalized_evosax
 from l2co_optimizers._src.ipopt import IPOPT_OPTIMIZERS
+from l2co_optimizers._src.jde21 import jde21_mapping
 from l2co_optimizers._src.lbfgs import (
     DEFAULT_MAX_LINESEARCH_STEPS,
     stock_lbfgs,
@@ -120,6 +121,7 @@ PLAIN_RUN_OPTIMIZERS: frozenset[str] = (
     | SCIPY_OPTIMIZERS
     | IPOPT_OPTIMIZERS
     | frozenset(normalize_key(k) for k in madde_mapping)
+    | frozenset(normalize_key(k) for k in jde21_mapping)
 )
 
 
@@ -783,6 +785,9 @@ def optimizer_parts(
     if name in {normalize_key(k) for k in madde_mapping}:
         raise ValueError(
             f"Optimizer {opt_step.optimizer!r} is MadDE, a DE variant on "
+    if name in {normalize_key(k) for k in jde21_mapping}:
+        raise ValueError(
+            f"Optimizer {opt_step.optimizer!r} is JDE21, a DE variant on "
             f"de_common: it switches through metabbo-jax's RL-DAS wrapper, "
             f"which shares its population, and its switching-menu ports "
             f"are not decided (#60-#62). It runs only as a plain registry "
