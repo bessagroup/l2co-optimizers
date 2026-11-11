@@ -149,24 +149,31 @@ def _trajectory(linesearch, n_steps, seed=None):
     return np.array(losses), np.array(points)
 
 
+#: Cross-host tolerance for the recorded trajectory (see the test).
+_HOST_RTOL = 1e-9
+
+
 @pytest.mark.parametrize("linesearch", ["armijo", "wolfe"])
 def test_unseeded_run_matches_the_pre_change_trajectory(linesearch):
     """Against the trajectory recorded before the hooks existed.
 
     The recording holds exact float64 values, but it was made on one CPU
-    and XLA build; another host may differ in the last bits. A tolerance
-    of 1e-12 absorbs that and still catches any change in behaviour,
-    which moves an ill-conditioned run far more within 40 steps.
+    and XLA build (Oscar, x86-64); another host differs in the last bits,
+    and the difference grows along the run: macOS arm64 in CI was off by
+    a relative 1.4e-12 after 40 steps. ``_HOST_RTOL = 1e-9`` absorbs that
+    with room to spare and still catches any change in behaviour: starting
+    from ``1.001 * I`` instead of ``I`` moves the run by 1e-2 or more
+    (relative).
     """
     recorded = json.loads(_RECORDED.read_text())[linesearch]
     losses, points = _trajectory(linesearch, len(recorded["loss"]))
     np.testing.assert_allclose(
-        losses, [float.fromhex(v) for v in recorded["loss"]], rtol=1e-12
+        losses, [float.fromhex(v) for v in recorded["loss"]], rtol=_HOST_RTOL
     )
     np.testing.assert_allclose(
         points,
         [[float.fromhex(v) for v in p] for p in recorded["params"]],
-        rtol=1e-12,
+        rtol=_HOST_RTOL,
     )
 
 
