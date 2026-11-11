@@ -126,6 +126,12 @@ def test_all_symbols_are_importable():
         ("optax_mapping", "l2co_optimizers._src.optax_implementations"),
         ("lbfgs_mapping", "l2co_optimizers._src.lbfgs"),
         ("shade_mapping", "l2co_optimizers._src.shade"),
+        ("nl_shade_rsp_mapping", "l2co_optimizers._src.nl_shade_rsp"),
+        ("nl_shade_rsp_update", "l2co_optimizers._src.nl_shade_rsp"),
+        (
+            "nl_shade_rsp_metabox_update",
+            "l2co_optimizers._src.nl_shade_rsp",
+        ),
         ("turbo_mapping", "l2co_optimizers._src.turbo"),
         (
             "rbf_trust_region_mapping",

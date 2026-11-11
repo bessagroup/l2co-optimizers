@@ -38,3 +38,13 @@ deletions only:
 - The quirks a port must reproduce are listed in
   `~/wt/l2co-opt-wave-60-64/decisions.md`, "Reference facts", and must be
   repeated in each entry's module docstring.
+
+## Fixtures
+
+- `make_fixture_nl_shade_rsp.py` writes
+  `tests/data/nl_shade_rsp_metabox_fixture.json`: the best cost of 20
+  seeded `NL_SHADE_RSP` runs (driven in 2500-evaluation RL-DAS periods,
+  budget 20000) on sphere, Rastrigin and Rosenbrock in 10 D. The slow
+  tests in `tests/test_nl_shade_rsp.py` compare `nl_shade_rsp_metabox`
+  with it. Run it from the repository root with
+  `uv run --no-sync python tests/reference/metabox_rldas/make_fixture_nl_shade_rsp.py`.
