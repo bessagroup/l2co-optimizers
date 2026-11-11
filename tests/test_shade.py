@@ -27,7 +27,12 @@ from l2co_optimizers._src.shade import (
     shade_update,
 )
 
-from .toy_problems import sphere_problem
+from .toy_problems import (
+    opaque_problem,
+    realization_best_losses,
+    rosenbrock_problem,
+    sphere_problem,
+)
 
 #                                                          Authorship & Credits
 # =============================================================================
@@ -187,7 +192,8 @@ def test_memory_index_wraps_at_memory_size():
     for step in range(3):
         state, _ = algo.tell(
             key=jr.key(step),
-            population=population,
+            # Moved trials: a parent's own point is never a success (#24).
+            population=population + step + 1.0,
             fitness=state.fitness - 1.0,  # always a strict improvement
             state=state,
             params=algo.default_params,
@@ -423,3 +429,22 @@ def test_first_generation_tie_does_not_pollute_memory():
     assert jnp.allclose(new_state.memory_cr, 0.5)
     assert int(new_state.memory_index) == 0
     assert int(new_state.archive_count) == 0
+
+
+def test_realization_result_does_not_depend_on_batch_size():
+    # l2co-optimizers#24: realization 0 has the same key alone and in a
+    # batch of three, so its whole trajectory must be the same.
+    problem = rosenbrock_problem(2)
+    alone = realization_best_losses("shade", problem, 1, 8)
+    batched = realization_best_losses("shade", problem, 3, 8)
+    assert jnp.array_equal(alone[0], batched[0])
+
+
+@pytest.mark.parametrize("dimensionality", [2, 3])
+def test_native_run_matches_a_host_callback_run(dimensionality):
+    # l2co-optimizers#24, second symptom: the same objective behind a
+    # callback XLA cannot see into must give the same trajectory.
+    problem = rosenbrock_problem(dimensionality)
+    native = realization_best_losses("shade", problem, 1, 8)
+    hidden = realization_best_losses("shade", opaque_problem(problem), 1, 8)
+    assert jnp.array_equal(native, hidden)
