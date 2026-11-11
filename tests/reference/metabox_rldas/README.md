@@ -38,3 +38,13 @@ deletions only:
 - The quirks a port must reproduce are listed in
   `~/wt/l2co-opt-wave-60-64/decisions.md`, "Reference facts", and must be
   repeated in each entry's module docstring.
+
+## Fixtures
+
+- `make_fixture_madde.py` writes `tests/data/madde_metabox_fixture.json`
+  (20 seeds of MetaBox's `MadDE` on the 10-D shifted sphere, shifted
+  Rastrigin and Rosenbrock, a 10 000-evaluation budget) for the slow
+  parity test in `tests/test_madde.py`. It also records the evaluations
+  each run used (10 018: MetaBox's last generation runs past the budget),
+  and the parity test gives the port that same count. Run it from the repository root with
+  `uv run --no-sync python -m tests.reference.metabox_rldas.make_fixture_madde`.
