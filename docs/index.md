@@ -101,6 +101,8 @@ These evolve a set of points using loss values only.
 | `differentialevolution` | Differential Evolution | evosax | ✓ | ✗ | ✗ | [Storn & Price (1997)](https://doi.org/10.1023/A:1008202821328) |
 | `diffusionevolution` | Diffusion Evolution | evosax | ✓ | ✗ | ✗ | [Zhang et al. (2024)](https://arxiv.org/abs/2410.02543) |
 | `gesmrga` | GESMR-GA | evosax | ✓ | ✗ | ✗ | [Kumar et al. (2022)](https://arxiv.org/abs/2204.04817) |
+| `madde` | MadDE: three adaptive mutation strategies, q-best binomial crossover, linear population reduction | built-in (de_common) | ✓ | ✗ | ✓ | [Biswas et al. (2021)](https://doi.org/10.1109/CEC45853.2021.9504792) |
+| `madde_metabox` | MadDE as MetaBox v2 runs it in RL-DAS (non-linear 170 → 30 reduction, its quirks kept) | built-in (de_common) | ✓ | ✗ | ✓ | [Biswas et al. (2021)](https://doi.org/10.1109/CEC45853.2021.9504792); [MetaBox v2](https://github.com/MetaEvo/MetaBox) |
 | `jde21` | j21: jDE with a big and a small population, crowding, restarts and pairwise population halving | built-in | ✓ | ✗ | ✓ | [Brest et al. (2021)](https://doi.org/10.1109/CEC45853.2021.9504782) |
 | `jde21_metabox` | MetaBox v2's JDE21 (the RL-DAS menu version), its quirks kept | built-in | ✓ | ✗ | ✓ | [Brest et al. (2021)](https://doi.org/10.1109/CEC45853.2021.9504782); [MetaBox v2](https://github.com/MetaEvo/MetaBox) |
 | `mr15ga` | MR15-GA | evosax | ✓ | ✗ | ✗ | [Rechenberg (1978)](https://doi.org/10.1007/978-3-642-81283-5_8) |
