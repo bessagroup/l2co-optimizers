@@ -27,8 +27,9 @@ import pytest
 from l2co_optimizers import BatchState
 from l2co_optimizers._src.mapping import optimizer_mapping
 from l2co_optimizers._src.mlsl import mlsl_rng
+from l2co_optimizers._src.scipy17_powell import minimize_powell
 
-from .reference.zenodo_mlsl.mlsl import MLSL
+from .reference.zenodo_mlsl import mlsl as reference_mlsl
 from .toy_problems import quadratic_problem
 
 #                                                          Authorship & Credits
@@ -103,27 +104,36 @@ class _ReferenceFunction:
         self.points = []
 
     def __call__(self, x):
+        # Like the entry's driver, evaluate a point outside the box at its
+        # projection (``mlsl`` module docstring, deviation 7).
+        x = np.clip(x, self.constraint.lb, self.constraint.ub)
         self.points.append(np.array(x, dtype=np.float64))
         self.state.evaluations += 1
         return float(self._loss(jnp.asarray(x)))
 
 
+def _scipy17_minimize(fun, x0, method, bounds, options):
+    """``scipy.optimize.minimize`` as the Zenodo runs saw it (scipy 1.7)."""
+    assert method == "Powell"
+    return minimize_powell(fun, x0, bounds, **options)
+
+
 def _run_reference(loss_fn, dim, budget, key, **hyperparameters):
     func = _ReferenceFunction(loss_fn, dim)
-    algorithm = MLSL(func, seed=mlsl_rng(key).get_state())
+    algorithm = reference_mlsl.MLSL(func, seed=mlsl_rng(key).get_state())
     algorithm.set_hyperparams(hyperparameters)
     algorithm.set_params({"budget": budget})
     algorithm.set_stopping_criteria(lambda: func.state.evaluations >= budget)
-    try:
-        algorithm.run()
-    except Exception:  # noqa: BLE001
-        # Once its local-search pool is spent, the reference calls Powell
-        # with ``maxfev=0``, which current scipy refuses before evaluating
-        # anything: the reference run ends there. The entry makes the same
-        # call, and its driver ends MLSL at the same evaluation (ADR 0002:
-        # failure is termination).
-        pass
+    algorithm.run()
     return np.asarray(func.points)
+
+
+@pytest.fixture(autouse=True)
+def _reference_on_scipy17_powell(monkeypatch):
+    # The reference imports ``minimize`` from scipy; the Zenodo runs used
+    # scipy 1.7, whose Powell runs one sweep even with ``maxfev=0``, where
+    # current scipy raises (``mlsl`` module docstring, deviation 6).
+    monkeypatch.setattr(reference_mlsl, "minimize", _scipy17_minimize)
 
 
 # =============================================================================
@@ -131,9 +141,9 @@ def _run_reference(loss_fn, dim, budget, key, **hyperparameters):
 
 
 # With the default zeta the local-search pool runs out in the first
-# iteration and both runs end there (see ``_run_reference``). A large
-# zeta starts only one local search per iteration, so the runs reach
-# iteration 5 and cover the growing reduced sample and critical distance.
+# iteration, so the default cases cover many spent-pool local searches
+# (one Powell sweep each). A large zeta starts only one local search per
+# iteration, so those runs cover more iterations.
 @pytest.mark.parametrize(
     ("loss_fn", "dim", "budget", "hyperparameters"),
     [
@@ -162,12 +172,10 @@ def test_evaluates_the_points_the_zenodo_reference_evaluates(
     ours = np.asarray(calls)
     assert ours.shape == (budget, dim)
     # The reference checks its budget only between iterations, so it may
-    # overrun it; the entry stops at the budget. The reference may also
-    # end early (see ``_run_reference``). Up to whichever comes first,
-    # the points must agree, and that stretch must include local searches.
-    k = min(len(reference), budget)
-    assert k > 50 * dim + 10
-    np.testing.assert_allclose(ours[:k], reference[:k], rtol=1e-6, atol=1e-6)
+    # overrun it; the entry stops at the budget. Over the whole budget the
+    # points must agree.
+    assert len(reference) >= budget
+    np.testing.assert_allclose(ours, reference[:budget], rtol=1e-6, atol=1e-6)
 
 
 # =============================================================================

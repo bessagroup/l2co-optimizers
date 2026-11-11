@@ -51,3 +51,11 @@ through the reference's own `seed=` argument, which accepts a
 `np.random.get_state()` tuple: it passes the state of
 `l2co_optimizers._src.mlsl.mlsl_rng(key)`, the generator the registry entry
 draws from for the same JAX key.
+
+The reference calls `scipy.optimize.minimize(method="Powell")`. The Zenodo
+runs used scipy 1.7 or older, whose Powell checks `maxfev` only after a full
+sweep, while the scipy this repo locks refuses `maxfev=0` outright. The test
+therefore replaces the name `minimize` in the reference module (with
+`monkeypatch`, so the file itself stays unedited) by
+`l2co_optimizers._src.scipy17_powell.minimize_powell`, the copy of scipy
+1.7.3's Powell that the registry entry uses.

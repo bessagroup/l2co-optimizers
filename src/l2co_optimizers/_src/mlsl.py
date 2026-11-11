@@ -19,9 +19,9 @@ The algorithm. Each iteration ``k = 1, 2, ...``:
    points drawn so far;
 3. compute the critical distance ``r_k``;
 4. from every point of the reduced sample that has no better point of
-   the reduced sample within ``r_k``, run a local search: scipy's Powell
-   with the box, ``ftol = 1e-8`` and ``maxfev`` set to the local budget
-   left.
+   the reduced sample within ``r_k``, run a local search: Powell (as in
+   scipy 1.7, deviation 6) with the box, ``ftol = 1e-8`` and ``maxfev``
+   set to the local budget left.
 
 Published parameters. The paper gives the reduced-sample fraction
 ``gamma`` and the critical distance
@@ -35,7 +35,8 @@ Values the paper does not state, all taken from the Zenodo code:
 * ``gamma = 0.1`` and ``zeta = 2.0`` (the hyperparameters' defaults);
 * ``N = 50 d`` points per iteration (the reference credits "the original
   BBOB submission");
-* the local solver, scipy's Powell, with ``ftol = 1e-8``;
+* the local solver, scipy's Powell (scipy 1.7 semantics, deviation 6),
+  with ``ftol = 1e-8``;
 * the local budget: one pool of ``0.1 (B - e)`` evaluations, with ``B``
   the budget and ``e`` the evaluations made before MLSL starts (zero in
   a standalone run), computed once. Each local search may use what is
@@ -63,17 +64,33 @@ Deviations of the reference from the paper, reproduced here on purpose
    iteration. This entry runs on the scipy entries' driver (ADR 0002),
    which ends the run at exactly ``n_iterations`` evaluations, so the
    history is the reference's first ``n_iterations`` evaluations.
-6. **A spent local-search pool ends the run.** Once the pool is zero,
-   the next local search calls Powell with ``maxfev = 0``. The scipy
-   this repo locks (1.18) refuses that before evaluating anything
-   (``_MaxFuncCallError`` from its first call), and the reference has
-   no handler, so the reference run ends there. This entry makes the
-   same call, and the driver treats the error as any failed scipy run
-   (ADR 0002): the rest of the budget re-evaluates the best point
-   found. With the default ``gamma`` and ``zeta`` this happens within
-   the first iteration on small test problems. Older scipy releases
-   evaluated at least once before checking ``maxfev``; which release
-   the Zenodo runs used is not recorded with the code.
+6. **A spent local-search pool, and scipy's Powell.** Once the pool is
+   zero, the reference calls Powell with ``maxfev = 0``. scipy from 1.8.0
+   on refuses that call before evaluating anything
+   (``_MaxFuncCallError``), and the reference has no handler, so under
+   the scipy this repo locks the reference run would end within its
+   first iteration. scipy up to 1.7 checked ``maxfev`` only after each
+   full sweep of line searches, so such a call still evaluated its start
+   point and ran one sweep (about ``8 d + 1`` evaluations on a box). The
+   Zenodo runs could only have finished under that behaviour: their
+   driver runs MLSL in a process pool with no error handling, and the
+   record dates from April 2022, two months after scipy 1.8.0. This
+   entry therefore runs its local searches with a vendored copy of
+   scipy 1.7.3's bounded Powell
+   (:mod:`l2co_optimizers._src.scipy17_powell`), checked point for point
+   against scipy 1.7.3. As a consequence, after the pool is spent every
+   new local search still costs one sweep, and a search may exceed what
+   is left of the pool by up to a sweep. The parity test runs the
+   vendored reference with the same Powell.
+
+7. **Points outside the box.** Powell's extrapolated point
+   ``2 x - x_1`` can leave the box (scipy 1.7's Powell does not clip it).
+   The reference evaluates it there, which BBOB functions allow; this
+   entry, like every scipy entry on the driver (ADR 0002), evaluates and
+   records it at its projection into the box. Powell itself still holds
+   the unprojected point. The parity test gives the reference the same
+   projection, so it checks the shared logic exactly; against the
+   original on BBOB, only the loss at such a point differs.
 
 How the l2co interface enters:
 
@@ -81,7 +98,7 @@ How the l2co interface enters:
   -- goes through the l2co loss and is one history entry, billed one
   evaluation (l2co ADR 0026), exactly as for the scipy entries. A run
   always lasts its whole budget: MLSL has no stopping rule of its own,
-  and after deviation 6 the driver re-evaluates the best point.
+  and the driver ends it at the budget, mid-iteration if need be.
 * **Start point and scale are accepted and ignored.** MLSL has no warm
   start: the reference samples the whole box from its first iteration
   and ignores any state handed over at a switch (the CMA-ES hand-over
@@ -130,6 +147,7 @@ from scipy.special import gamma as gamma_function
 from l2co_optimizers._src.core.state_transfer import FAMILY_DERIVATIVE_FREE
 from l2co_optimizers._src.core.typing import LossFunction, StopFunction
 from l2co_optimizers._src.core.update_class import UpdateClass
+from l2co_optimizers._src.scipy17_powell import minimize_powell
 from l2co_optimizers._src.scipy_implementations import (
     ScipyUpdateClass,
     _Driver,
@@ -218,8 +236,7 @@ def _mlsl_minimizer(gamma: float, zeta: float):
         f: list[float] = []
         k = 1
         # The driver ends the run (raising out of an evaluation) when the
-        # budget is spent; MLSL has no stopping rule of its own. Powell
-        # with a spent pool raises too (deviation 6).
+        # budget is spent; MLSL has no stopping rule of its own.
         while True:
             for _ in range(popsize):
                 new_point = rng.uniform(lb, ub)
@@ -244,12 +261,12 @@ def _mlsl_minimizer(gamma: float, zeta: float):
                     if cond:
                         break
                 if not cond:
-                    solution = so.minimize(
+                    solution = minimize_powell(
                         driver.value,
                         xr[i],
-                        method="Powell",
-                        bounds=bounds,
-                        options={"ftol": _LOCAL_FTOL, "maxfev": local_budget},
+                        bounds,
+                        ftol=_LOCAL_FTOL,
+                        maxfev=local_budget,
                     )
                     local_budget = max(local_budget - solution.nfev, 0)
             k = k + 1
