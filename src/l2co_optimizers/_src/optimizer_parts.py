@@ -784,30 +784,22 @@ def optimizer_parts(
             f"registry entry, not inside a switching menu (ADR 0003)."
         )
 
-    if name in {normalize_key(k) for k in nl_shade_rsp_mapping}:
+    de_variants = {
+        normalize_key(key): label
+        for mapping, label in (
+            (jde21_mapping, "JDE21"),
+            (madde_mapping, "MadDE"),
+            (nl_shade_rsp_mapping, "NL-SHADE-RSP"),
+        )
+        for key in mapping
+    }
+    if name in de_variants:
         raise ValueError(
-            f"Optimizer {opt_step.optimizer!r} is NL-SHADE-RSP, a DE "
+            f"Optimizer {opt_step.optimizer!r} is {de_variants[name]}, a DE "
             f"variant on de_common: it switches through metabbo-jax's "
             f"RL-DAS wrapper, which shares its population, and its "
-            f"switching-menu ports "
-        )
-
-    if name in {normalize_key(k) for k in madde_mapping}:
-        raise ValueError(
-            f"Optimizer {opt_step.optimizer!r} is MadDE, a DE variant on "
-            f"de_common: it switches through metabbo-jax's RL-DAS wrapper, "
-            f"which shares its population, and its switching-menu ports "
-            f"are not decided (#60-#62). It runs only as a plain registry "
-            f"entry, not inside a switching menu."
-        )
-
-    if name in {normalize_key(k) for k in jde21_mapping}:
-        raise ValueError(
-            f"Optimizer {opt_step.optimizer!r} is JDE21, a DE variant on "
-            f"de_common: it switches through metabbo-jax's RL-DAS wrapper, "
-            f"which shares its population, and its switching-menu ports "
-            f"are not decided (#60-#62). It runs only as a plain registry "
-            f"entry, not inside a switching menu."
+            f"switching-menu ports are not decided (#60-#62). It runs only "
+            f"as a plain registry entry, not inside a switching menu."
         )
 
     raise ValueError(
