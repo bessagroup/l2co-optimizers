@@ -109,7 +109,11 @@ from l2co_optimizers._src.core.update_class import (
     UpdateClass,
 )
 from l2co_optimizers._src.core.utils import normalize_key
-from l2co_optimizers._src.evosax_implementations import normalized_evosax
+from l2co_optimizers._src.evosax_implementations import (
+    normalized_evosax,
+    read_cmaes,
+    seed_cmaes_covariance,
+)
 from l2co_optimizers._src.lbfgs import lbfgs_mapping
 from l2co_optimizers._src.mapping import (
     constraint_handling,
@@ -126,6 +130,10 @@ from l2co_optimizers._src.optax_implementations import (
     normalized_optax_normal,
     optax_mapping,
     step_fevals,
+)
+from l2co_optimizers._src.optimistix_implementations import (
+    read_inverse_hessian,
+    seed_inverse_hessian,
 )
 from l2co_optimizers._src.optimizer_parts import (
     PLAIN_RUN_OPTIMIZERS,
@@ -209,12 +217,16 @@ __all__ = [
     "optimizer_parts",
     "optimizers",
     "random_sampling",
+    "read_cmaes",
+    "read_inverse_hessian",
     "relative_normal_sampling",
     "rbf_trust_region_mapping",
     "register_optimizer",
     "register_schedule_namer",
     "reset",
     "run",
+    "seed_cmaes_covariance",
+    "seed_inverse_hessian",
     "shade_mapping",
     "shade_popsize",
     "shade_update",

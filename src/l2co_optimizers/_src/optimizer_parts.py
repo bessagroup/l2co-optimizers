@@ -63,6 +63,7 @@ from l2co_optimizers._src.lbfgs import (
 )
 from l2co_optimizers._src.madde import madde_mapping
 from l2co_optimizers._src.mapping import optimizer_mapping
+from l2co_optimizers._src.mlsl import MLSL_OPTIMIZERS
 from l2co_optimizers._src.nl_shade_rsp import nl_shade_rsp_mapping
 from l2co_optimizers._src.optax_implementations import (
     normalized_optax_from_state,
@@ -108,7 +109,7 @@ __all__ = [
 
 #: Registry names that run only as plain registry entries (normalized). Their
 #: solver owns the loop or cannot yet be stepped by one -- Nelder--Mead
-#: (ADR 0001), the scipy minimisers (ADR 0002), IPOPT (ADR 0003) -- or
+#: (ADR 0001), the scipy minimisers (ADR 0002), IPOPT (ADR 0003), MLSL -- or
 #: switch another way: the DE variants on ``de_common`` share one population
 #: through metabbo-jax's RL-DAS wrapper, and their menu ports are not decided
 #: (#60-#62) -- so
@@ -121,6 +122,7 @@ PLAIN_RUN_OPTIMIZERS: frozenset[str] = (
     (OPTIMISTIX_OPTIMIZERS - frozenset(GRADIENT_SOLVERS))
     | SCIPY_OPTIMIZERS
     | IPOPT_OPTIMIZERS
+    | MLSL_OPTIMIZERS
     | frozenset(normalize_key(k) for k in nl_shade_rsp_mapping)
     | frozenset(normalize_key(k) for k in madde_mapping)
     | frozenset(normalize_key(k) for k in jde21_mapping)
@@ -773,6 +775,15 @@ def optimizer_parts(
             f"there is no step to interleave with a switch. It runs only "
             f"as a plain registry entry, not inside a switching menu (ADR "
             f"0002)."
+        )
+
+    if name in MLSL_OPTIMIZERS:
+        raise ValueError(
+            f"Optimizer {opt_step.optimizer!r} is MLSL, which cannot be "
+            f"unpacked into parts: it runs the whole budget inside one host "
+            f"callback, on the scipy entries' driver, so there is no step "
+            f"to interleave with a switch. It runs only as a plain registry "
+            f"entry, not inside a switching menu (ADR 0002)."
         )
 
     if name in IPOPT_OPTIMIZERS:

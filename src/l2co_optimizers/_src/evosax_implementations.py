@@ -35,6 +35,10 @@ from evosax.algorithms.distribution_based import distribution_based_algorithms
 from evosax.algorithms.distribution_based.base import (
     DistributionBasedAlgorithm,
 )
+from evosax.algorithms.distribution_based.cma_es import (
+    State as CMAESState,
+)
+from evosax.algorithms.distribution_based.cma_es import eigen_decomposition
 from evosax.algorithms.population_based import population_based_algorithms
 from evosax.algorithms.population_based.base import PopulationBasedAlgorithm
 from jax.tree_util import Partial
@@ -573,6 +577,92 @@ def evosax_population_update(
         transfer_write_fn=write_fn,
         switch_ports=switch_ports,
     )
+
+
+#                                              cmaes: reading and seeding C
+# =============================================================================
+
+
+def _cmaes_state(state: EvoSaxState) -> CMAESState:
+    if not isinstance(state, CMAESState):
+        raise TypeError(
+            f"Expected the state of the 'cmaes' entry (evosax CMA_ES), got "
+            f"{type(state).__name__}."
+        )
+    return state
+
+
+def read_cmaes(state: EvoSaxState) -> tuple[jax.Array, jax.Array, jax.Array]:
+    """The mean, step size and ``C`` of a ``cmaes`` state.
+
+    ``state`` is the ``opt_state`` of the ``cmaes`` entry, the middle of
+    its ``(params, opt_state, key)`` carry: an evosax ``CMA_ES`` state.
+    The wrapper does not rescale coordinates, so all three are in the
+    raveled coordinates of the parameters (the order of
+    ``jax.flatten_util.ravel_pytree``).
+
+    ``C`` is CMA-ES's matrix without the step size: the distribution
+    the next generation is sampled from has covariance ``sigma**2 * C``.
+    Which of the two seeds BFGS is the caller's choice; see
+    :func:`~l2co_optimizers.seed_inverse_hessian`.
+
+    Returns
+    -------
+    tuple[Array, Array, Array]
+        ``(mean, sigma, C)``: shapes ``(n,)``, ``()`` and ``(n, n)``.
+
+    Raises
+    ------
+    TypeError
+        If ``state`` is not a ``CMA_ES`` state.
+    """
+    state = _cmaes_state(state)
+    return state.mean, jnp.asarray(state.std), state.C
+
+
+def seed_cmaes_covariance(state: EvoSaxState, C: jax.Array) -> EvoSaxState:
+    """``state`` with CMA-ES's matrix ``C`` replaced.
+
+    For the reverse transfer of best single switch (BFGS -> CMA-ES,
+    Schröder et al. 2022, §3.4). ``B`` and ``D`` are re-derived from
+    ``C`` with evosax's own eigendecomposition, so that
+    ``B @ diag(D**2) @ B.T`` is ``C`` (``D`` holds the square roots of
+    the eigenvalues; evosax symmetrizes ``C``, floors its eigenvalues
+    at ``1e-8`` and adds ``1e-8`` to its diagonal first). ``C`` itself is
+    stored as given. The mean, the step size ``sigma`` and the
+    evolution paths are kept. The hook takes any matrix and does not
+    choose: ``C = H / sigma**2`` (the BFGS inverse Hessian ``H`` as the
+    covariance, ``sigma`` kept) and ``C = H`` are both the caller's to
+    pass.
+
+    Parameters
+    ----------
+    state : EvoSaxState
+        The ``cmaes`` entry's ``opt_state``; see :func:`read_cmaes`.
+    C : Array
+        The ``(n, n)`` matrix, symmetric positive definite, in the
+        raveled coordinates of the parameters.
+
+    Returns
+    -------
+    EvoSaxState
+        ``state`` with ``C``, ``B`` and ``D`` replaced.
+
+    Raises
+    ------
+    TypeError
+        If ``state`` is not a ``CMA_ES`` state.
+    ValueError
+        If ``C`` is not ``(n, n)``.
+    """
+    state = _cmaes_state(state)
+    C = jnp.asarray(C, dtype=state.C.dtype)
+    if C.shape != state.C.shape:
+        raise ValueError(
+            f"Expected a {state.C.shape} matrix, got shape {C.shape}."
+        )
+    _, B, D = eigen_decomposition(C)
+    return state.replace(C=C, B=B, D=D)
 
 
 #                                                                      Registry

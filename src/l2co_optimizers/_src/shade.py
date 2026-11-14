@@ -28,6 +28,13 @@ for vectorized SHADE implementations):
    replacement uses ``<=`` while success (archive insertion and
    memory update) requires a strict ``<``, so the weighted means never
    see NaN or zero total improvement.
+5. **Re-evaluated parents are not successes** — a trial at exactly its
+   parent's point never counts as a success. The adapter's first step
+   re-evaluates the starting population, and that second evaluation
+   can differ from the first in the last bits depending on how XLA
+   compiled the batch; without this rule such noise entered the
+   archive and the memories, so a realization's result depended on how
+   many realizations ran beside it (l2co-optimizers#24).
 """
 
 #                                                                       Modules
@@ -474,9 +481,15 @@ class SHADE(PopulationBasedAlgorithm):
         )
 
         # Greedy selection: replace on <=, but only a strict improvement
-        # counts as a success (feeds archive and memory update).
+        # counts as a success (feeds archive and memory update). A trial
+        # at its parent's very point is never a success, whatever its
+        # fitness: the adapter's first step re-evaluates the starting
+        # population, and a second evaluation of the same point can
+        # differ in the last bits with how XLA compiled the batch
+        # (l2co-optimizers#24).
         replace = trial_fitness <= parent_fitness
-        success = trial_fitness < parent_fitness
+        moved = jnp.any(population != state.population, axis=1)
+        success = (trial_fitness < parent_fitness) & moved
 
         new_population = jnp.where(
             replace[:, None], population, state.population

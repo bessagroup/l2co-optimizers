@@ -137,6 +137,20 @@ def test_all_symbols_are_importable():
             "rbf_trust_region_mapping",
             "l2co_optimizers._src.rbf_trust_region",
         ),
+        # Warm-start hooks (issue #64)
+        (
+            "seed_inverse_hessian",
+            "l2co_optimizers._src.optimistix_implementations",
+        ),
+        (
+            "read_inverse_hessian",
+            "l2co_optimizers._src.optimistix_implementations",
+        ),
+        ("read_cmaes", "l2co_optimizers._src.evosax_implementations"),
+        (
+            "seed_cmaes_covariance",
+            "l2co_optimizers._src.evosax_implementations",
+        ),
     ],
 )
 def test_facade_symbol_is_its_src_origin(name, module):
