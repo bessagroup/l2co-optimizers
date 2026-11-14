@@ -121,6 +121,11 @@ from l2co_optimizers._src.mapping import (
     optimizers,
     register_optimizer,
 )
+from l2co_optimizers._src.nl_shade_rsp import (
+    nl_shade_rsp_mapping,
+    nl_shade_rsp_metabox_update,
+    nl_shade_rsp_update,
+)
 from l2co_optimizers._src.optax_implementations import (
     normalized_optax_normal,
     optax_mapping,
@@ -200,6 +205,9 @@ __all__ = [
     "get_sampler",
     "grid_sampling",
     "lbfgs_mapping",
+    "nl_shade_rsp_mapping",
+    "nl_shade_rsp_metabox_update",
+    "nl_shade_rsp_update",
     "normal_sampling",
     "normalize_key",
     "normalized_evosax",

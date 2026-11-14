@@ -38,3 +38,25 @@ deletions only:
 - The quirks a port must reproduce are listed in
   `~/wt/l2co-opt-wave-60-64/decisions.md`, "Reference facts", and must be
   repeated in each entry's module docstring.
+
+## Fixtures
+
+- `make_fixture_nl_shade_rsp.py` writes
+  `tests/data/nl_shade_rsp_metabox_fixture.json`: the best cost of 20
+  seeded `NL_SHADE_RSP` runs (driven in 2500-evaluation RL-DAS periods,
+  budget 20000) on sphere, Rastrigin and Rosenbrock in 10 D. The slow
+  tests in `tests/test_nl_shade_rsp.py` compare `nl_shade_rsp_metabox`
+  with it. Run it from the repository root with
+  `uv run --no-sync python tests/reference/metabox_rldas/make_fixture_nl_shade_rsp.py`.
+- `make_fixture_madde.py` writes `tests/data/madde_metabox_fixture.json`
+  (20 seeds of MetaBox's `MadDE` on the 10-D shifted sphere, shifted
+  Rastrigin and Rosenbrock, a 10 000-evaluation budget) for the slow
+  parity test in `tests/test_madde.py`. It also records the evaluations
+  each run used (10 018: MetaBox's last generation runs past the budget),
+  and the parity test gives the port that same count. Run it from the repository root with
+  `uv run --no-sync python -m tests.reference.metabox_rldas.make_fixture_madde`.
+- `make_fixture_jde21.py` writes `tests/data/jde21_metabox_fixture.json`
+  (MetaBox `JDE21`: final best cost of 20 seeds on sphere, Rastrigin and
+  Rosenbrock, 10-D, box [-5, 5], 10 000 evaluations), read by the slow
+  parity test in `tests/test_jde21.py`. Re-run it from the repository root
+  with `uv run --no-sync python tests/reference/metabox_rldas/make_fixture_jde21.py`.

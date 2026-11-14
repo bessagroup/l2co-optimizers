@@ -56,12 +56,15 @@ from l2co_optimizers._src.core.typing import LossFunction
 from l2co_optimizers._src.core.utils import normalize_key
 from l2co_optimizers._src.evosax_implementations import normalized_evosax
 from l2co_optimizers._src.ipopt import IPOPT_OPTIMIZERS
+from l2co_optimizers._src.jde21 import jde21_mapping
 from l2co_optimizers._src.lbfgs import (
     DEFAULT_MAX_LINESEARCH_STEPS,
     stock_lbfgs,
 )
+from l2co_optimizers._src.madde import madde_mapping
 from l2co_optimizers._src.mapping import optimizer_mapping
 from l2co_optimizers._src.mlsl import MLSL_OPTIMIZERS
+from l2co_optimizers._src.nl_shade_rsp import nl_shade_rsp_mapping
 from l2co_optimizers._src.optax_implementations import (
     normalized_optax_from_state,
     normalized_optax_normal,
@@ -106,7 +109,10 @@ __all__ = [
 
 #: Registry names that run only as plain registry entries (normalized). Their
 #: solver owns the loop or cannot yet be stepped by one -- Nelder--Mead
-#: (ADR 0001), the scipy minimisers (ADR 0002), IPOPT (ADR 0003), MLSL -- so
+#: (ADR 0001), the scipy minimisers (ADR 0002), IPOPT (ADR 0003), MLSL -- or
+#: switch another way: the DE variants on ``de_common`` share one population
+#: through metabbo-jax's RL-DAS wrapper, and their menu ports are not decided
+#: (#60-#62) -- so
 #: :func:`optimizer_parts` refuses them, and they can never be a sub-optimizer
 #: in a switching menu or an rl2co action. A caller assembling a menu from a
 #: configured suite leaves these out. ADR 0011 takes the steppable ones off
@@ -117,6 +123,9 @@ PLAIN_RUN_OPTIMIZERS: frozenset[str] = (
     | SCIPY_OPTIMIZERS
     | IPOPT_OPTIMIZERS
     | MLSL_OPTIMIZERS
+    | frozenset(normalize_key(k) for k in nl_shade_rsp_mapping)
+    | frozenset(normalize_key(k) for k in madde_mapping)
+    | frozenset(normalize_key(k) for k in jde21_mapping)
 )
 
 
@@ -784,6 +793,24 @@ def optimizer_parts(
             f"runs the whole budget inside one host callback, so there is "
             f"no step to interleave with a switch. It runs only as a plain "
             f"registry entry, not inside a switching menu (ADR 0003)."
+        )
+
+    de_variants = {
+        normalize_key(key): label
+        for mapping, label in (
+            (jde21_mapping, "JDE21"),
+            (madde_mapping, "MadDE"),
+            (nl_shade_rsp_mapping, "NL-SHADE-RSP"),
+        )
+        for key in mapping
+    }
+    if name in de_variants:
+        raise ValueError(
+            f"Optimizer {opt_step.optimizer!r} is {de_variants[name]}, a DE "
+            f"variant on de_common: it switches through metabbo-jax's "
+            f"RL-DAS wrapper, which shares its population, and its "
+            f"switching-menu ports are not decided (#60-#62). It runs only "
+            f"as a plain registry entry, not inside a switching menu."
         )
 
     raise ValueError(
